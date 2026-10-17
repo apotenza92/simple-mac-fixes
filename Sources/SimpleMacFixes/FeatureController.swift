@@ -16,6 +16,7 @@ final class FeatureController: ObservableObject {
     private let dockAppExpose = DockAppExposeFeature()
     private let dockFolderFinder = DockFolderFinderFeature()
     private var workspaceObservers: [NSObjectProtocol] = []
+    private var runningAppsObservation: NSKeyValueObservation?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -43,17 +44,23 @@ final class FeatureController: ObservableObject {
     func start() {
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
-            workspaceObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
-                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                MainActor.assumeIsolated {
-                    if name == NSWorkspace.didLaunchApplicationNotification, let app { self?.quitIfReplaced(app) }
-                    self?.objectWillChange.send()
-                }
+            workspaceObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.objectWillChange.send() }
             })
         }
-        // The old apps would double up on every fix, including at login if
-        // they launch after this one.
+        // The old apps would double up on every fix, including at login if they
+        // launch after this one. Launch notifications skip menu-bar-only apps,
+        // so watch the running list itself.
         NSWorkspace.shared.runningApplications.forEach(quitIfReplaced)
+        runningAppsObservation = NSWorkspace.shared.observe(\.runningApplications, options: [.new]) { [weak self] _, change in
+            let launched = change.newValue ?? []
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    launched.forEach { self?.quitIfReplaced($0) }
+                    self?.objectWillChange.send()
+                }
+            }
+        }
         apply()
     }
 
@@ -62,6 +69,7 @@ final class FeatureController: ObservableObject {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
         }
         workspaceObservers.removeAll()
+        runningAppsObservation = nil
         finderCut.stop()
         mouseScrollReversal.stop()
         greenButtonMaximize.stop()
@@ -70,8 +78,17 @@ final class FeatureController: ObservableObject {
     }
 
     private func quitIfReplaced(_ app: NSRunningApplication) {
-        guard let id = app.bundleIdentifier, ConflictingApp.isReplaced(id) else { return }
+        quitIfReplaced(app, attempt: 0)
+    }
+
+    private func quitIfReplaced(_ app: NSRunningApplication, attempt: Int) {
+        guard !app.isTerminated, let id = app.bundleIdentifier, ConflictingApp.isReplaced(id) else { return }
+        // An app that is still launching ignores the request, so keep asking for a while.
         app.terminate()
+        guard attempt < 10 else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.quitIfReplaced(app, attempt: attempt + 1)
+        }
     }
 
     /// Re-evaluates every feature. `AppModel` calls this when Accessibility access changes.
