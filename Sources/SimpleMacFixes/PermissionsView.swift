@@ -150,8 +150,8 @@ struct SetupGuideView: View {
                             feature("macwindow", title: "Maximize windows",
                                     detail: "The green button or a title-bar double-click fills the screen. Drag the title bar to restore. Option-click the green button for full screen.")
                             Divider()
-                            feature("dock.rectangle", title: "Dock shows app windows",
-                                    detail: "Click an app in the Dock that has more than one window to pick one with App Exposé.")
+                            feature("dock.rectangle", title: "The Dock",
+                                    detail: "Click an app in the Dock that has more than one window to pick one with App Exposé. Option-click a Dock folder to open it in Finder.")
                             Divider()
                             feature("speaker.wave.2", title: "Volume and brightness",
                                     detail: "Media keys work with audio interfaces and external monitors.")
@@ -163,6 +163,9 @@ struct SetupGuideView: View {
                             Divider()
                             feature("gearshape", title: "Settings",
                                     detail: "Launch at login, updates and permissions are in Settings.")
+                            Divider()
+                            feature("arrow.triangle.merge", title: "Replaces older apps",
+                                    detail: "Macsimize, Dockmint and Simple Mac Keyboard Control quit automatically while \(AppIdentity.name) runs.")
                             Text("You can return to this guide from Settings at any time.")
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)

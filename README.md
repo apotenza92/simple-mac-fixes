@@ -8,9 +8,16 @@ Small fixes for the macOS behaviours that annoy people, especially if you're com
 - **Traditional mouse scrolling**: wheel mice scroll like Windows; trackpads and the Magic Mouse keep your System Settings direction.
 - **Maximize windows**: the green button or a title-bar double-click fills the screen without full screen. Drag the title bar to restore. Option-click the green button for full screen.
 - **Dock shows app windows**: click an app in the Dock that has more than one window to pick one with App Exposé.
+- **Option-click Dock folders opens Finder**: instead of the stack.
 - **Volume and brightness keys everywhere**: media keys work with audio interfaces, USB DACs and external monitors.
 
-Replaces [Macsimize](https://github.com/apotenza92/macsimize), [Dockmint](https://github.com/apotenza92/dockmint) and [Simple Mac Keyboard Control](https://github.com/apotenza92/simple-mac-keyboard-control).
+Replaces [Macsimize](https://github.com/apotenza92/macsimize), [Dockmint](https://github.com/apotenza92/dockmint) and [Simple Mac Keyboard Control](https://github.com/apotenza92/simple-mac-keyboard-control); they quit automatically while Simple Mac Fixes runs.
+
+## Install
+
+```sh
+brew install --cask apotenza92/tap/simple-mac-fixes
+```
 
 ## Required macOS permissions
 

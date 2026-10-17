@@ -14,6 +14,7 @@ final class FeatureController: ObservableObject {
     private let mouseScrollReversal = MouseScrollReversalFeature()
     private let greenButtonMaximize = GreenButtonMaximizeFeature()
     private let dockAppExpose = DockAppExposeFeature()
+    private let dockFolderFinder = DockFolderFinderFeature()
     private var workspaceObservers: [NSObjectProtocol] = []
 
     init(defaults: UserDefaults = .standard) {
@@ -42,10 +43,17 @@ final class FeatureController: ObservableObject {
     func start() {
         let center = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
-            workspaceObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.objectWillChange.send() }
+            workspaceObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                MainActor.assumeIsolated {
+                    if name == NSWorkspace.didLaunchApplicationNotification, let app { self?.quitIfReplaced(app) }
+                    self?.objectWillChange.send()
+                }
             })
         }
+        // The old apps would double up on every fix, including at login if
+        // they launch after this one.
+        NSWorkspace.shared.runningApplications.forEach(quitIfReplaced)
         apply()
     }
 
@@ -58,6 +66,12 @@ final class FeatureController: ObservableObject {
         mouseScrollReversal.stop()
         greenButtonMaximize.stop()
         dockAppExpose.stop()
+        dockFolderFinder.stop()
+    }
+
+    private func quitIfReplaced(_ app: NSRunningApplication) {
+        guard let id = app.bundleIdentifier, ConflictingApp.isReplaced(id) else { return }
+        app.terminate()
     }
 
     /// Re-evaluates every feature. `AppModel` calls this when Accessibility access changes.
@@ -73,6 +87,8 @@ final class FeatureController: ObservableObject {
              start: greenButtonMaximize.start, stop: greenButtonMaximize.stop)
         sync(.dockAppExpose, running: dockAppExpose.isRunning, trusted: trusted,
              start: dockAppExpose.start, stop: dockAppExpose.stop)
+        sync(.dockFolderFinder, running: dockFolderFinder.isRunning, trusted: trusted,
+             start: dockFolderFinder.start, stop: dockFolderFinder.stop)
     }
 
     private func sync(_ feature: Feature, running: Bool, trusted: Bool,

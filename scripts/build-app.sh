@@ -53,13 +53,13 @@ if [[ -n "${SIMPLEMACFIXES_BUILD_NUMBER:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${SIMPLEMACFIXES_BUILD_NUMBER}" "${plist}"
 fi
 if [[ "${SIMPLEMACFIXES_RELEASE_BUILD:-0}" == "1" ]]; then
-    # Updates stay off until the release pipeline provides a signing key and feed.
-    if [[ -n "${SIMPLEMACFIXES_SPARKLE_PUBLIC_KEY:-}" ]]; then
-        arch="$(uname -m)"
-        [[ "$arch" != "x86_64" ]] || arch=x64
-        /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string ${SIMPLEMACFIXES_SPARKLE_PUBLIC_KEY}" "${plist}"
-        /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://raw.githubusercontent.com/apotenza92/simple-mac-fixes/main/appcasts/${channel}-${arch}.xml" "${plist}"
-    fi
+    # The private half lives in the sparkle-signing environment and the
+    # release machine's keychain (Sparkle account "simple-mac-fixes").
+    sparkle_public_key="${SIMPLEMACFIXES_SPARKLE_PUBLIC_KEY:-PfwUgAaYtnm/zqpGcBLSuwR2wLrjyKeISdwVwJdyzAE=}"
+    arch="$(uname -m)"
+    [[ "$arch" != "x86_64" ]] || arch=x64
+    /usr/libexec/PlistBuddy -c "Add :SUPublicEDKey string ${sparkle_public_key}" "${plist}"
+    /usr/libexec/PlistBuddy -c "Add :SUFeedURL string https://raw.githubusercontent.com/apotenza92/simple-mac-fixes/main/appcasts/${channel}-${arch}.xml" "${plist}"
 fi
 printf 'APPL????' > "${app_dir}/Contents/PkgInfo"
 

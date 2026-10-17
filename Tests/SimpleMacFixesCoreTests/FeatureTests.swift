@@ -13,9 +13,19 @@ import Testing
     #expect(!MouseScrollReversal.shouldReverse(source: .gesture, naturalScrollingEnabled: true))
 }
 
-@Test func conflictsMatchBetaAndDevBuilds() {
-    let running = ["com.lujjjh.LinearMouse", "pzc.Macsimize.beta", "pzc.Macsimizer"]
+@Test func conflictsWarnAboutOtherUtilitiesOnly() {
+    let running = ["com.lujjjh.LinearMouse", "pzc.Macsimize.beta", "com.ethanbills.DockDoor"]
     #expect(ConflictingApp.conflicts(in: .mouseScrollReversal, runningBundleIdentifiers: running).map(\.name) == ["LinearMouse"])
-    #expect(ConflictingApp.conflicts(in: .greenButtonMaximize, runningBundleIdentifiers: running).map(\.name) == ["Macsimize"])
-    #expect(ConflictingApp.conflicts(in: .finderCut, runningBundleIdentifiers: running).isEmpty)
+    #expect(ConflictingApp.conflicts(in: .dockClicks, runningBundleIdentifiers: running).map(\.name) == ["DockDoor"])
+    // Replaced apps are quit, so they never need a warning.
+    #expect(ConflictingApp.conflicts(in: .greenButtonMaximize, runningBundleIdentifiers: running).isEmpty)
+}
+
+@Test func replacedAppsMatchBetaAndDevBuilds() {
+    for id in ["pzc.Macsimize", "pzc.Macsimize.beta", "pzc.Dockmint", "pzc.Docktor", "com.apotenza.KeyControl.beta", "com.apotenza.keycontrol.dev"] {
+        #expect(ConflictingApp.isReplaced(id), "\(id)")
+    }
+    for id in ["pzc.Macsimizer", "com.lujjjh.LinearMouse", "com.apotenza.SimpleMacFixes", "com.ethanbills.DockDoor"] {
+        #expect(!ConflictingApp.isReplaced(id), "\(id)")
+    }
 }

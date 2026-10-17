@@ -16,8 +16,8 @@ case "$SIMPLEMACFIXES_SIGNING_IDENTITY" in
     'Developer ID Application:'*) ;;
     *) echo 'Packaging requires a Developer ID Application identity.' >&2; exit 1 ;;
 esac
-tag="${1:?Usage: scripts/package-release.sh vX.Y.Z[-beta.N] stable|beta}"
-channel="${2:?Choose stable or beta}"
+tag="${1:?Usage: scripts/package-release.sh vX.Y.Z [stable]}"
+channel="${2:-stable}"
 case "$(uname -m)" in arm64) arch=arm64 ;; x86_64) arch=x64 ;; *) exit 1 ;; esac
 metadata="$(python3 "${repo_dir}/scripts/release/contract.py" "$tag" --channel "$channel" --arch "$arch")"
 field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1" <<< "$metadata"; }

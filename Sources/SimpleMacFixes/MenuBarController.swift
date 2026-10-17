@@ -43,13 +43,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         accessibilityItem = action("Allow \(Self.accessibilityName)…", #selector(allowAccessibility))
         menu.addItem(accessibilityItem)
 
-        for feature in Feature.allCases {
+        for (index, feature) in Feature.allCases.enumerated() {
             let item = checkbox(feature.title, #selector(toggleFeature(_:)))
             (item.view?.subviews.first as? NSButton)?.identifier = NSUserInterfaceItemIdentifier(feature.rawValue)
             item.view?.toolTip = feature.detail
             featureItems[feature] = item
             menu.addItem(item)
-            menu.addItem(conflictItem(for: feature.conflictArea))
+            // One note per area, after the last switch in it.
+            let next = Feature.allCases.dropFirst(index + 1).first
+            if next?.conflictArea != feature.conflictArea {
+                menu.addItem(conflictItem(for: feature.conflictArea))
+            }
         }
         menu.addItem(.separator())
 
@@ -176,7 +180,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func isEnabled(_ area: ConflictingApp.Area) -> Bool {
         if area == .keyboardControl { return model.audio.isEnabled || model.brightness.isEnabled }
-        return Feature.allCases.first { $0.conflictArea == area }.map(features.isEnabled) ?? false
+        return Feature.allCases.contains { $0.conflictArea == area && features.isEnabled($0) }
     }
 
     private func conflictItem(for area: ConflictingApp.Area) -> NSMenuItem {

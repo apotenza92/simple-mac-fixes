@@ -10,7 +10,10 @@ Fixes, all on by default:
 - **Traditional mouse scrolling**: wheel mice scroll the traditional way; trackpads and the Magic Mouse keep the System Settings direction.
 - **Maximize windows** (from Macsimize): the green button and a title-bar double-click maximize; dragging a maximized window's title bar restores its previous size under the cursor; Option-click on the green button still enters full screen.
 - **Dock shows app windows** (from Dockmint, App Exposé only): clicking a running app's Dock icon shows App Exposé when the app has more than one window; with one window the click behaves normally. No sub-options. Full-screen windows are not counted because App Exposé never shows them.
+- **Option-click Dock folders opens Finder** (from Dockmint): only a plain Option-click on a Dock folder is consumed and hit-tested; every other click passes straight through.
 - **Volume and brightness keys** (from Simple Mac Keyboard Control): software volume for fixed-volume outputs, DDC or software brightness for external displays, per-display enablement.
+
+The replaced apps (Macsimize, Dockmint/Docktor, Simple Mac Keyboard Control, including their beta and dev builds) are quit at launch and whenever they start; other overlapping utilities only get a menu note.
 
 Do not bring back other Dockmint actions, Macsimize's Maximize All/Restore All or full-screen mode setting, or anything Keyboard Control treats as out of scope (equalizers, per-app audio, device routing, custom shortcuts, contrast). Prefer a better default over a new setting.
 
@@ -41,11 +44,13 @@ Behaviour that unit tests cannot prove needs a manual check on the real Mac, rec
 - Finder: cut/paste files between folders, the desktop and another volume; rename a file and use ⌘X/⌘V in the name; search field; Go to Folder; ⌘Z after a move; non-QWERTY layout.
 - Scrolling: a wheel mouse, a free-spinning wheel (e.g. MX Master), the Magic Mouse and the trackpad, with natural scrolling on and off.
 - Green button: click, Option-click, title-bar double-click, drag a maximized window to restore, multiple displays.
-- Dock: click an app with one, two and zero windows; an app with a full-screen window plus one normal window; click the same icon again while App Exposé is open; drag an icon to reorder.
+- Dock: Option-click a folder and a stack (opens Finder, no stack popup), plain-click it (stack as usual), Option-drag it; click an app with one, two and zero windows; an app with a full-screen window plus one normal window; click the same icon again while App Exposé is open; drag an icon to reorder.
 - Volume and brightness: follow `Tests/KeyboardControlManualTestPlan.md` (from Keyboard Control) for the affected hardware.
 
 Do not run Dock or window automation unprompted: it changes the user's Dock and open windows.
 
 ## Releases
 
-Tag `vX.Y.Z` (stable and beta) or `vX.Y.Z-beta.N` (beta only) on `main` after adding `release-notes/<tag>.md`. `.github/workflows/release.yml` tests, then signs with the Developer ID certificate, notarizes and staples each channel on Apple silicon and Intel runners, and creates a draft GitHub release. Signing credentials live only in the `release-signing` environment (restricted to `v*` tags); never print them or run `scripts/release/ci-package.sh` with shell tracing. Naming and build numbers come from `scripts/release/contract.py`. Sparkle feeds and Homebrew are not published yet.
+Stable channel only (no beta for now). Add `release-notes/vX.Y.Z.md`, push it to `main`, then push the tag `vX.Y.Z`. `.github/workflows/release.yml` tests, signs with the Developer ID certificate, notarizes and staples on Apple silicon and Intel runners, publishes the GitHub release, then commits the Sparkle feeds (`appcasts/stable-{arm64,x64}.xml`) to `main`. The Homebrew cask comes out as the `homebrew-cask` artifact; commit it to `Casks/simple-mac-fixes.rb` in `apotenza92/homebrew-tap`.
+
+Credentials live only in the `release-signing` and `sparkle-signing` environments (restricted to `v*` tags). The Sparkle private key is also in the release machine's login keychain under the Sparkle account `simple-mac-fixes`; its public key is in `scripts/build-app.sh`. Never print credentials or run `scripts/release/ci-package.sh` with shell tracing. Naming and build numbers come from `scripts/release/contract.py`.
