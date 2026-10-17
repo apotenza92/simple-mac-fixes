@@ -1,0 +1,108 @@
+name: Release
+# Builds, signs with Developer ID, notarizes and staples each channel and
+# architecture, then creates a draft GitHub release. Publishing (Sparkle
+# feeds, Homebrew) is not set up yet; publish the draft by hand.
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-publication
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'apotenza92/simple-mac-fixes'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.meta.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate release source and notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+          python3 -m unittest discover -s scripts/release -p 'test_*.py'
+          python3 - "$RELEASE_TAG" <<'PY'
+          import pathlib, sys
+          sys.path.insert(0, 'scripts/release')
+          from contract import parse_tag
+          tag = parse_tag(sys.argv[1])['tag']
+          notes = pathlib.Path('release-notes') / (tag + '.md')
+          if not notes.is_file() or not notes.read_text().strip():
+              raise SystemExit('Add reviewed release-notes/' + tag + '.md before tagging')
+          PY
+      - id: meta
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: echo "matrix=$(python3 scripts/release/contract.py "$RELEASE_TAG" --native-matrix)" >> "$GITHUB_OUTPUT"
+  package:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    environment: release-signing
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native tests and development build
+        run: scripts/test.sh
+      - name: Sign, notarize, and verify each channel
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          APPLE_SIGNING_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_SIGNING_CERTIFICATE_P12_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARYTOOL_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARYTOOL_KEY_P8_BASE64 }}
+          APPLE_SIGNING_CERTIFICATE_SHA256: ${{ vars.APPLE_SIGNING_CERTIFICATE_SHA256 }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_NOTARYTOOL_KEY_ID: ${{ vars.APPLE_NOTARYTOOL_KEY_ID }}
+          APPLE_NOTARYTOOL_ISSUER_ID: ${{ vars.APPLE_NOTARYTOOL_ISSUER_ID }}
+        run: scripts/release/ci-package.sh "$RELEASE_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.arch }}
+          path: build/releases/${{ github.ref_name }}/
+          if-no-files-found: error
+  draft:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: dist
+          merge-multiple: true
+      - name: Verify exact asset set and create draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - "$RELEASE_TAG" <<'PY'
+          import pathlib, sys
+          sys.path.insert(0, 'scripts/release')
+          from contract import parse_tag, package
+          expected = set()
+          for channel in parse_tag(sys.argv[1])['channels']:
+              for arch in ['arm64', 'x64']:
+                  asset = package(sys.argv[1], channel, arch)['asset']
+                  expected.update([asset, asset + '.sha256', asset + '.notary.json'])
+          actual = {p.name for p in pathlib.Path('dist').iterdir() if p.is_file()}
+          if expected != actual:
+              raise SystemExit('Release asset set does not match the contract')
+          PY
+          (cd dist && sha256sum -c -- *.sha256)
+          prerelease=()
+          if [[ "$RELEASE_TAG" == *-beta.* ]]; then prerelease=(--prerelease); fi
+          gh release create "$RELEASE_TAG" dist/* --verify-tag --draft "${prerelease[@]}" \
+            --title "$RELEASE_TAG" --notes-file "release-notes/$RELEASE_TAG.md"

@@ -45,3 +45,7 @@ Behaviour that unit tests cannot prove needs a manual check on the real Mac, rec
 - Volume and brightness: follow `Tests/KeyboardControlManualTestPlan.md` (from Keyboard Control) for the affected hardware.
 
 Do not run Dock or window automation unprompted: it changes the user's Dock and open windows.
+
+## Releases
+
+Tag `vX.Y.Z` (stable and beta) or `vX.Y.Z-beta.N` (beta only) on `main` after adding `release-notes/<tag>.md`. `.github/workflows/release.yml` tests, then signs with the Developer ID certificate, notarizes and staples each channel on Apple silicon and Intel runners, and creates a draft GitHub release. Signing credentials live only in the `release-signing` environment (restricted to `v*` tags); never print them or run `scripts/release/ci-package.sh` with shell tracing. Naming and build numbers come from `scripts/release/contract.py`. Sparkle feeds and Homebrew are not published yet.
