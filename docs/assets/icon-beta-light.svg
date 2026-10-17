@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>Simple Mac Fixes — beta, light</title>
+<desc>A switch in the on position on a transparent canvas. The menu icon uses the same geometry as an outline.</desc>
+<defs><clipPath id="tile-mask"><rect x="100" y="100" width="824" height="824" rx="184"/></clipPath>
+  <linearGradient id="track" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#a77bf3"/><stop offset="1" stop-color="#6535b7"/></linearGradient>
+  <linearGradient id="knob" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf0"/></linearGradient>
+</defs>
+<g clip-path="url(#tile-mask)"><rect x="100" y="100" width="824" height="824" fill="#ffffff"/><g transform="translate(100 100) scale(.8046875)">
+<!-- A single full-bleed transparent canvas; macOS supplies the background and mask. -->
+<rect x="172" y="322" width="680" height="380" rx="190" fill="url(#track)"/>
+<circle cx="662" cy="512" r="150" fill="url(#knob)"/>
+</g></g></svg>
