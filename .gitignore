@@ -4,3 +4,4 @@
 /*.xcworkspace/
 xcuserdata/
 .swiftpm/
+__pycache__/
