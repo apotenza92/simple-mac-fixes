@@ -10,12 +10,12 @@ Simple Mac Fixes merges Macsimize, Dockmint (App Exposé only) and Simple Mac Ke
 - Dockmint: App Exposé on Dock click for apps with more than one window (no option). Full-screen windows are excluded from the count.
 - Keyboard Control: volume, brightness, display enablement, HUD, with its tests.
 - Sparkle wired in, but off until a signing key and feed exist.
-- GitHub repo, CI (both architectures), and a tag-triggered release that signs with Developer ID, notarizes and drafts a GitHub release.
+- v0.0.1 released (stable only): Developer ID signed, notarized, Sparkle feeds on `main`, Homebrew cask `apotenza92/tap/simple-mac-fixes`.
 
 ## Next
 
 1. **Hardware testing** of every fix (checklist in `AGENTS.md`).
-2. **Release publishing**: add the three signing secrets to the `release-signing` environment, then port Keyboard Control's publication stages (Sparkle appcasts, Homebrew cask). Needs a new Sparkle EdDSA key pair in a `sparkle-signing` environment; set `SIMPLEMACFIXES_SPARKLE_PUBLIC_KEY` for release builds.
+2. **Homebrew automation**: the cask is committed to the tap by hand from the `homebrew-cask` artifact. Register the product in the tap's `homebrew-products.json` trusted publisher (it currently assumes a beta cask) or push with the tap token from the release workflow.
 3. **Website** on GitHub Pages in the same style as the other apps.
 4. **Migration**:
    - Import settings from the old apps' defaults domains on first launch.

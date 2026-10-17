@@ -63,7 +63,7 @@ def cask(tag, digests):
 {chr(10).join(sections)}
 
   name "{NAME}"
-  desc "Small fixes for macOS behaviours that annoy Windows switchers"
+  desc "Fixes for behaviours that annoy people coming from Windows"
   homepage "https://github.com/{REPOSITORY}"
 
   livecheck do
