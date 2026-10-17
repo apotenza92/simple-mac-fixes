@@ -32,6 +32,7 @@ final class FeatureController: ObservableObject {
     func setEnabled(_ feature: Feature, _ enabled: Bool) {
         objectWillChange.send()
         defaults.set(enabled, forKey: feature.defaultsKey)
+        if enabled { NSWorkspace.shared.runningApplications.forEach(quitIfReplaced) }
         apply()
     }
 
@@ -81,8 +82,14 @@ final class FeatureController: ObservableObject {
         quitIfReplaced(app, attempt: 0)
     }
 
+    /// The old apps always; other utilities only while the fix they overlap is on.
+    private func shouldQuit(_ bundleIdentifier: String) -> Bool {
+        guard let known = ConflictingApp.known.first(where: { $0.matches(bundleIdentifier) }) else { return false }
+        return known.isReplaced || Feature.allCases.contains { $0.conflictArea == known.area && isEnabled($0) }
+    }
+
     private func quitIfReplaced(_ app: NSRunningApplication, attempt: Int) {
-        guard !app.isTerminated, let id = app.bundleIdentifier, ConflictingApp.isReplaced(id) else { return }
+        guard !app.isTerminated, let id = app.bundleIdentifier, shouldQuit(id) else { return }
         // An app that is still launching ignores the request, so keep asking for a while.
         app.terminate()
         guard attempt < 10 else { return }

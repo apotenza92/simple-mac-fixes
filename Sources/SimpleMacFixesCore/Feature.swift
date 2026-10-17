@@ -46,7 +46,8 @@ public enum Feature: String, CaseIterable, Identifiable {
     }
 }
 
-/// Other utilities that would double up on a fix if both ran.
+/// Other utilities that would double up on a fix if both ran. They are quit
+/// while the overlapping fix is on; the menu notes any that keep running.
 public struct ConflictingApp: Equatable {
     public enum Area: Equatable {
         case finderCut, mouseScrollReversal, greenButtonMaximize, dockClicks, keyboardControl

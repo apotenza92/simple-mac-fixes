@@ -165,7 +165,7 @@ struct SetupGuideView: View {
                                     detail: "Launch at login, updates and permissions are in Settings.")
                             Divider()
                             feature("arrow.triangle.merge", title: "Replaces older apps",
-                                    detail: "Macsimize, Dockmint and Simple Mac Keyboard Control quit automatically while \(AppIdentity.name) runs.")
+                                    detail: "Macsimize, Dockmint and Simple Mac Keyboard Control quit automatically while \(AppIdentity.name) runs, as do apps like LinearMouse while the fix they overlap is on.")
                             Text("You can return to this guide from Settings at any time.")
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)

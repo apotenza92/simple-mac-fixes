@@ -13,7 +13,7 @@ Fixes, all on by default:
 - **Option-click Dock folders opens Finder** (from Dockmint): only a plain Option-click on a Dock folder is consumed and hit-tested; every other click passes straight through.
 - **Volume and brightness keys** (from Simple Mac Keyboard Control): software volume for fixed-volume outputs, DDC or software brightness for external displays, per-display enablement.
 
-The replaced apps (Macsimize, Dockmint/Docktor, Simple Mac Keyboard Control, including their beta and dev builds) are quit at launch and whenever they start; other overlapping utilities only get a menu note.
+The replaced apps (Macsimize, Dockmint/Docktor, Simple Mac Keyboard Control, including their beta and dev builds) are quit at launch and whenever they start. Other overlapping utilities in `ConflictingApp.known` (LinearMouse, DockDoor…) are quit the same way while the fix they overlap is on; the menu notes any that keep running.
 
 Do not bring back other Dockmint actions, Macsimize's Maximize All/Restore All or full-screen mode setting, or anything Keyboard Control treats as out of scope (equalizers, per-app audio, device routing, custom shortcuts, contrast). Prefer a better default over a new setting.
 

@@ -11,7 +11,7 @@ Small fixes for the macOS behaviours that annoy people, especially if you're com
 - **Option-click Dock folders opens Finder**: instead of the stack.
 - **Volume and brightness keys everywhere**: media keys work with audio interfaces, USB DACs and external monitors.
 
-Replaces [Macsimize](https://github.com/apotenza92/macsimize), [Dockmint](https://github.com/apotenza92/dockmint) and [Simple Mac Keyboard Control](https://github.com/apotenza92/simple-mac-keyboard-control); they quit automatically while Simple Mac Fixes runs.
+Replaces [Macsimize](https://github.com/apotenza92/macsimize), [Dockmint](https://github.com/apotenza92/dockmint) and [Simple Mac Keyboard Control](https://github.com/apotenza92/simple-mac-keyboard-control); they quit automatically while Simple Mac Fixes runs, as do overlapping utilities like LinearMouse while the matching fix is on.
 
 ## Install
 
