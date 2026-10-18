@@ -3,17 +3,14 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.0.2</title>
-      <sparkle:version>290000</sparkle:version>
-      <sparkle:shortVersionString>0.0.2</sparkle:shortVersionString>
+      <title>v0.0.3</title>
+      <sparkle:version>390000</sparkle:version>
+      <sparkle:shortVersionString>0.0.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- Cut and paste files now works: press Command-X, then Command-V to move files to another folder.
-- All settings are now in one Settings window. The menu bar icon opens Settings or quits, and you can hide the icon. Open the app again to get back to Settings.
-- Mouse wheels now move the page the same amount for each click.
-- New: Steady pointer speed. The pointer moves the same distance however fast you move the mouse.
-- Clearer descriptions for every setting.
+      <description sparkle:format="plain-text">- Clicking a layout in the green button's menu now does what the layout shows, instead of maximizing the window.
+- Removed Steady pointer speed. You can still turn off pointer acceleration in System Settings › Mouse.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.0.2/Simple-Mac-Fixes-v0.0.2-macos-x64.zip" length="3532739" type="application/octet-stream" sparkle:edSignature="9tCoGrYz+kSprguLwAR042SZi1Lf1L8sAnQ6hzaAUU5YRwGkQGH9gv0tfLFZ8eWP8LpAG2SEx3fGc9d8gHDdAA==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.0.3/Simple-Mac-Fixes-v0.0.3-macos-x64.zip" length="3529483" type="application/octet-stream" sparkle:edSignature="Q/LGXrl6ZVg8lqwn+fCNAEAbU2VsP0ogLs44VpPFhjD8mbSFWPu5qTQPV3yR1w4VxtHy6cCwaV11Ai/oRT/WDA==" />
     </item>
   </channel>
 </rss>
