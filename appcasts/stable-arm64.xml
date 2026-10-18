@@ -3,15 +3,17 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.0.4</title>
-      <sparkle:version>490000</sparkle:version>
-      <sparkle:shortVersionString>0.0.4</sparkle:shortVersionString>
+      <title>v0.0.5</title>
+      <sparkle:version>590000</sparkle:version>
+      <sparkle:shortVersionString>0.0.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- New: Instant desktop switching. Your shortcuts for moving between desktops switch straight away, without the slide. Press Control-Option-Command and a number to jump to that desktop, or Control-Option-Command-Tab and -~ to go round them all.
-- New: Instant Dock. When the Dock is hidden, it appears as soon as you point at it. Your Dock settings go back to normal when Simple Mac Fixes quits.
-- Clicks no longer get stuck: clicking apps in the Dock or windows elsewhere stays responsive even when an app is busy.
+      <description sparkle:format="plain-text">- New: Window previews in the Dock. Point at an app with more than one window to see them all, even minimized and hidden ones and windows on other spaces. Click one to go to it, or close, minimize or maximize it from the preview.
+- The app's name stays up above the preview, just like the Dock shows it.
+- If your Dock hides itself, it stays up while a preview is open.
+- Clicking an app in the Dock no longer opens the windows view. Window previews replace it.
+- Option-clicking Dock folders keeps working after the Dock restarts.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.0.4/Simple-Mac-Fixes-v0.0.4-macos-arm64.zip" length="3527237" type="application/octet-stream" sparkle:edSignature="6gEsKZEbAVlKT/DBEXqiTf47il2A9NLWpGWrcBRqJWR4k+VEYNlKiyq6qbnuPlo+JHSRK9Qf5gUmJPERa+mYCA==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.0.5/Simple-Mac-Fixes-v0.0.5-macos-arm64.zip" length="3576729" type="application/octet-stream" sparkle:edSignature="76/Ly+cYA+3OlnUmCgp0MDqX969Qr8ZODJ8ZLB7vp+VCQjkqCyrMO1Ei2FpW7rkGbzuNIuCJxY7vJQj+JzHeBg==" />
     </item>
   </channel>
 </rss>
