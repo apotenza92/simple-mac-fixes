@@ -29,3 +29,11 @@ import Testing
         #expect(!ConflictingApp.isReplaced(id), "\(id)")
     }
 }
+
+@Test func everyWheelNotchScrollsThreeLinesInItsDirection() {
+    #expect(MouseScrollReversal.lines(forNotch: 1, fixedLines: 0.1) == 3)
+    // macOS speeds up fast spins; the step stays three lines.
+    #expect(MouseScrollReversal.lines(forNotch: 9, fixedLines: 8.7) == 3)
+    #expect(MouseScrollReversal.lines(forNotch: -4, fixedLines: -3.5) == -3)
+    #expect(MouseScrollReversal.lines(forNotch: -1, fixedLines: 0) == -3)
+}

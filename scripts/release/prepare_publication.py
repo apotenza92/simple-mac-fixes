@@ -64,7 +64,7 @@ def cask(tag, digests):
 
   name "{NAME}"
   desc "Fixes for behaviours that annoy people coming from Windows"
-  homepage "https://github.com/{REPOSITORY}"
+  homepage "https://apotenza92.github.io/simple-mac-fixes/"
 
   livecheck do
     url :url

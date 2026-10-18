@@ -4,7 +4,7 @@ Simple Mac Fixes merges Macsimize, Dockmint (App Exposé only) and Simple Mac Ke
 
 ## Done
 
-- App shell: Keyboard Control's menu bar UX with one switch per fix, Settings window (launch at login, updates, permissions, setup guide), setup guide, icon and menu glyph.
+- App shell: a menu bar icon with Settings and Quit (it can be hidden), a Settings window holding every switch, volume and brightness, launch at login, updates and permissions, setup guide, icon and menu glyph.
 - Finder cut and paste, traditional mouse scrolling.
 - Macsimize: green button and title-bar double-click maximize, drag-to-restore, Option-click full screen, with its tests.
 - Dockmint: App Exposé on Dock click for apps with more than one window (no option). Full-screen windows are excluded from the count.

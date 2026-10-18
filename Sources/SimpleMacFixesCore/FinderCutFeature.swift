@@ -10,8 +10,7 @@ public final class FinderCutFeature {
 
     private var tracker = FinderCutTracker()
     private lazy var tap = EventTap(types: [.keyDown]) { [weak self] _, event in
-        self?.process(event)
-        return true
+        self?.process(event) ?? true
     }
 
     public init() {}
@@ -23,42 +22,68 @@ public final class FinderCutFeature {
         tracker = FinderCutTracker()
     }
 
-    private func process(_ event: CGEvent) {
+    /// Returns false to drop the key press.
+    private func process(_ event: CGEvent) -> Bool {
         let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate])
         let shortcut = FinderCutTracker.shortcut(
             characters: NSEvent(cgEvent: event)?.charactersIgnoringModifiers,
             commandOnly: modifiers == .maskCommand
         )
+        let target = Self.targetApplication(of: event)
         guard shortcut != .other,
-              NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Self.finderBundleIdentifier
-        else { return }
+              let finder = target,
+              finder.bundleIdentifier == Self.finderBundleIdentifier
+        else { return true }
         let decision = tracker.handle(
             shortcut,
             finderIsFrontmost: true,
-            textInputFocused: Self.textInputFocused(),
+            textInputFocused: Self.textInputFocused(in: finder.processIdentifier),
             pasteboardChangeCount: NSPasteboard.general.changeCount
         )
+        // Editing the key press in place does not reach Finder's menus, so the
+        // press is dropped and a fresh shortcut is typed in its place. That one
+        // comes back through this tap as an ordinary shortcut and passes through.
         switch decision {
         case .passThrough:
-            break
+            return true
         case .copyInsteadOfCut:
-            guard let copyKey = Self.keyCode(for: "c") else { return }
-            event.setIntegerValueField(.keyboardEventKeycode, value: Int64(copyKey))
-            event.keyboardSetUnicodeString(stringLength: 1, unicodeString: Array("c".utf16))
+            guard Self.type("c", flags: .maskCommand) else { return true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.tracker.copyFinished(pasteboardChangeCount: NSPasteboard.general.changeCount)
             }
+            return false
         case .moveInsteadOfPaste:
-            event.flags.insert(.maskAlternate)
+            // Command-Option-V is Finder's Move Item Here.
+            return !Self.type("v", flags: [.maskCommand, .maskAlternate])
         }
     }
 
+    private static func type(_ character: Character, flags: CGEventFlags) -> Bool {
+        guard let key = keyCode(for: character) else { return false }
+        let source = CGEventSource(stateID: .hidSystemState)
+        for isDown in [true, false] {
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: isDown) else { return false }
+            event.flags = flags
+            event.post(tap: .cghidEventTap)
+        }
+        return true
+    }
+
+    /// The app the key is being delivered to. The workspace's frontmost app can
+    /// lag behind a click into another app, so it is only the fallback.
+    private static func targetApplication(of event: CGEvent) -> NSRunningApplication? {
+        let pid = pid_t(event.getIntegerValueField(.eventTargetUnixProcessID))
+        if pid > 0, let app = NSRunningApplication(processIdentifier: pid) { return app }
+        return NSWorkspace.shared.frontmostApplication
+    }
+
     /// Unknown focus counts as text so file shortcuts never break text editing.
-    private static func textInputFocused() -> Bool {
-        let system = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(system, 0.15)
+    /// Asks Finder itself, because the system-wide focused element fails on recent macOS.
+    private static func textInputFocused(in finderPID: pid_t) -> Bool {
+        let finder = AXUIElementCreateApplication(finderPID)
+        AXUIElementSetMessagingTimeout(finder, 0.15)
         var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+        guard AXUIElementCopyAttributeValue(finder, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
               let focused, CFGetTypeID(focused) == AXUIElementGetTypeID()
         else { return true }
         let element = focused as! AXUIElement

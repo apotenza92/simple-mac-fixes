@@ -13,13 +13,14 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6"),
     ],
     targets: [
-        // Finder cut, mouse scrolling, shared event tap and app policy.
+        // Finder cut, mouse scrolling and acceleration, shared event tap and app policy.
         .target(
             name: "SimpleMacFixesCore",
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("ApplicationServices"),
                 .linkedFramework("Carbon"),
+                .linkedFramework("IOKit"),
             ]
         ),
         // Ported from Macsimize.

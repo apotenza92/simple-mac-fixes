@@ -36,6 +36,14 @@ final class FeatureController: ObservableObject {
         apply()
     }
 
+    /// Mirrors System Settings › Mouse › Pointer acceleration rather than a saved setting of our own.
+    var isMouseAccelerationOff: Bool { MouseAcceleration.isOff }
+
+    func setMouseAccelerationOff(_ off: Bool) {
+        objectWillChange.send()
+        MouseAcceleration.setOff(off)
+    }
+
     /// Another running utility doing the same job, which would double up or undo it.
     func conflicts(in area: ConflictingApp.Area) -> [ConflictingApp] {
         let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)

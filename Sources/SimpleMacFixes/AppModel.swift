@@ -203,6 +203,8 @@ final class AppModel: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    var hasCompletedSetup: Bool { setupProgress.isComplete }
+
     func finishSetup() {
         setupProgress.finish()
         setupWindow?.close()

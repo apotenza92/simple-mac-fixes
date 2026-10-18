@@ -1,7 +1,7 @@
 import SwiftUI
 import KeyboardControlFeature
 
-/// Shared by the menu and setup guide: one explanation and action per permission.
+/// Shared by Settings and the setup guide: one explanation and action per permission.
 struct PermissionsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var audio: AudioController
@@ -17,7 +17,7 @@ struct PermissionsView: View {
         VStack(alignment: .leading, spacing: 12) {
             permission(
                 title: keyboardPermissionTitle,
-                detail: "Every fix: Finder, mouse scrolling, windows, the Dock and media keys",
+                detail: "Needed for every fix to work",
                 status: nil,
                 enabled: model.hasAccessibilityPermission,
                 actionTitle: model.hasAccessibilityPermission ? "Open Settings" : "Allow…"
@@ -30,7 +30,7 @@ struct PermissionsView: View {
 
             permission(
                 title: "Input Monitoring",
-                detail: "External keyboard brightness keys",
+                detail: "Brightness keys on separate keyboards",
                 status: nil,
                 enabled: model.hasInputMonitoringPermission,
                 actionTitle: model.hasInputMonitoringPermission ? "Open Settings" : "Allow…"
@@ -44,7 +44,7 @@ struct PermissionsView: View {
 
                 permission(
                     title: "System Audio Recording",
-                    detail: "Volume control for audio interfaces",
+                    detail: "Volume keys for more speakers and audio devices",
                     status: nil,
                     enabled: audio.isApplyingSoftwareGain,
                     actionTitle: canTryAudio ? "Allow…" : nil,
@@ -142,30 +142,30 @@ struct SetupGuideView: View {
                         switch step {
                         case 0:
                             feature("folder", title: "Cut and paste in Finder",
-                                    detail: "⌘X and ⌘V move files, like on Windows.")
+                                    detail: "Command-X and Command-V move files between folders.")
                             Divider()
                             feature("computermouse", title: "Mouse scrolling",
-                                    detail: "Wheel mice scroll the traditional way. Your trackpad stays as it is.")
+                                    detail: "Mice scroll in the traditional direction. Trackpads aren’t affected.")
                             Divider()
                             feature("macwindow", title: "Maximize windows",
-                                    detail: "The green button or a title-bar double-click fills the screen. Drag the title bar to restore. Option-click the green button for full screen.")
+                                    detail: "The green button makes a window fill the screen.")
                             Divider()
                             feature("dock.rectangle", title: "The Dock",
-                                    detail: "Click an app in the Dock that has more than one window to pick one with App Exposé. Option-click a Dock folder to open it in Finder.")
+                                    detail: "Click an app with several windows to choose one. Option-click a folder to open it.")
                             Divider()
                             feature("speaker.wave.2", title: "Volume and brightness",
-                                    detail: "Media keys work with audio interfaces and external monitors.")
+                                    detail: "Volume and brightness keys work with more speakers and screens.")
                         case 1:
                             PermissionsView(model: model)
                         default:
                             feature("switch.2", title: "Everything is on",
-                                    detail: "Each fix has one switch in the menu bar menu if you want to turn it off.")
+                                    detail: "Turn any fix off in Settings.")
                             Divider()
                             feature("gearshape", title: "Settings",
-                                    detail: "Launch at login, updates and permissions are in Settings.")
+                                    detail: "Open Settings from the menu bar icon. If you hide the icon, open \(AppIdentity.name) again to get back.")
                             Divider()
                             feature("arrow.triangle.merge", title: "Replaces older apps",
-                                    detail: "Macsimize, Dockmint and Simple Mac Keyboard Control quit automatically while \(AppIdentity.name) runs, as do apps like LinearMouse while the fix they overlap is on.")
+                                    detail: "Macsimize, Dockmint and Simple Mac Keyboard Control quit automatically. Apps like LinearMouse quit while a matching fix is on.")
                             Text("You can return to this guide from Settings at any time.")
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)

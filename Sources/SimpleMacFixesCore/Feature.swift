@@ -13,21 +13,28 @@ public enum Feature: String, CaseIterable, Identifiable {
 
     public var title: String {
         switch self {
-        case .finderCut: "Cut and paste files in Finder"
-        case .mouseScrollReversal: "Traditional mouse scrolling"
+        case .finderCut: "Cut and paste files"
+        case .mouseScrollReversal: "Classic mouse wheel scrolling"
         case .greenButtonMaximize: "Maximize windows"
-        case .dockAppExpose: "Dock shows app windows"
-        case .dockFolderFinder: "Option-click Dock folders opens Finder"
+        case .dockAppExpose: "Show app windows from the Dock"
+        case .dockFolderFinder: "Open Dock folders in Finder"
         }
     }
 
+    /// Plain language: what the person sees happen, with no system jargon.
     public var detail: String {
         switch self {
-        case .finderCut: "⌘X then ⌘V moves files. Text fields are unchanged."
-        case .mouseScrollReversal: "Wheel mice scroll like Windows. Trackpads and the Magic Mouse follow System Settings."
-        case .greenButtonMaximize: "The green button or a title-bar double-click fills the screen without full screen. Drag the title bar to restore. Option-click the green button for full screen."
-        case .dockAppExpose: "Clicking an app in the Dock that has more than one window shows them with App Exposé."
-        case .dockFolderFinder: "Option-click a folder in the Dock to open it in Finder instead of the stack."
+        case .finderCut:
+            "Press Command-X to cut a file, then Command-V to move it to another folder."
+        case .mouseScrollReversal:
+            "Mice scroll in the traditional direction. Trackpads aren’t affected."
+        case .greenButtonMaximize:
+            "The green button makes a window fill the screen while keeping the Dock and menu bar. "
+                + "Double-clicking the title bar does the same. Hold Option when clicking for full screen."
+        case .dockAppExpose:
+            "Click an app in the Dock that has several windows open to see them all and choose one."
+        case .dockFolderFinder:
+            "Hold Option and click a folder in the Dock to open it in a Finder window."
         }
     }
 
@@ -47,7 +54,7 @@ public enum Feature: String, CaseIterable, Identifiable {
 }
 
 /// Other utilities that would double up on a fix if both ran. They are quit
-/// while the overlapping fix is on; the menu notes any that keep running.
+/// while the overlapping fix is on; Settings notes any that keep running.
 public struct ConflictingApp: Equatable {
     public enum Area: Equatable {
         case finderCut, mouseScrollReversal, greenButtonMaximize, dockClicks, keyboardControl

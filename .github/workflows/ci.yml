@@ -19,6 +19,7 @@ jobs:
           python-version: '3.13'
       - run: python3 -m pip install 'cryptography==45.0.7'
       - run: python3 -m unittest discover -s scripts/release -p 'test_*.py'
+      - run: node --test scripts/release/test_downloads.mjs
   test:
     strategy:
       fail-fast: false
