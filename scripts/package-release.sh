@@ -32,8 +32,20 @@ trap 'rm -rf "$upload"' EXIT
 ditto -c -k --keepParent "$app" "$upload/submit.zip"
 xcrun notarytool submit "$upload/submit.zip" "${notary_args[@]}" --wait --output-format json > "$upload/result.json"
 python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r.get("status")=="Accepted" else "Notarization was not accepted")' "$upload/result.json"
-xcrun stapler staple "$app"
-xcrun stapler validate "$app"
+# Stapling looks the ticket up on Apple's servers, which sometimes drop the
+# connection (stapler exit 68). Retry those calls before failing the release.
+retry() {
+    local attempt
+    for attempt in 1 2 3 4 5; do
+        "$@" && return 0
+        (( attempt < 5 )) || break
+        echo "Retrying in $(( attempt * 15 ))s: $*" >&2
+        sleep $(( attempt * 15 ))
+    done
+    return 1
+}
+retry xcrun stapler staple "$app"
+retry xcrun stapler validate "$app"
 codesign --verify --deep --strict "$app"
 spctl --assess --type execute --verbose=2 "$app"
 asset="$(field asset)"
