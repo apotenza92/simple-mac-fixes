@@ -15,7 +15,7 @@ Simple Mac Fixes merges Macsimize, Dockmint (App Exposé only) and Simple Mac Ke
 ## Next
 
 1. **Hardware testing** of every fix (checklist in `AGENTS.md`).
-2. **Homebrew automation**: the cask is committed to the tap by hand from the `homebrew-cask` artifact. Register the product in the tap's `homebrew-products.json` trusted publisher (it currently assumes a beta cask) or push with the tap token from the release workflow.
+2. ~~**Homebrew automation**~~ done: the tap publishes from the attested bundle on each release.
 3. **Website** on GitHub Pages in the same style as the other apps.
 4. **Migration**:
    - Import settings from the old apps' defaults domains on first launch.

@@ -78,6 +78,8 @@ jobs:
     environment: sparkle-signing
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,15 +115,22 @@ jobs:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: python3 scripts/release/prepare_publication.py "$RELEASE_TAG" dist publication
+      # The Homebrew tap only publishes bundles attested by this workflow.
+      - name: Attest Homebrew bundle
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: publication/homebrew-publication.tar.gz
       - name: Publish release, then feeds
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          # Assets must be public before any feed points at them.
-          gh release create "$RELEASE_TAG" dist/* --verify-tag --latest \
+          # Upload everything to a draft first: releases become immutable when published,
+          # and assets must be public before any feed points at them.
+          gh release create "$RELEASE_TAG" dist/* publication/homebrew-publication.tar.gz --verify-tag --draft \
             --title "Simple Mac Fixes ${RELEASE_TAG#v}" --notes-file "release-notes/$RELEASE_TAG.md"
+          gh release edit "$RELEASE_TAG" --draft=false --latest
           mkdir -p appcasts
           cp publication/appcasts/*.xml appcasts/
           git config user.name 'github-actions[bot]'

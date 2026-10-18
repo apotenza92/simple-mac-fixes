@@ -1,6 +1,8 @@
 import base64
 import hashlib
+import json
 import os
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,7 +35,7 @@ class PublicationTests(unittest.TestCase):
             os.chdir(root)
             try:
                 with mock.patch.object(publication, 'bundled_public_key', return_value=public):
-                    publication.prepare('v0.0.1', assets, root / 'out', private)
+                    publication.prepare('v0.0.1', assets, root / 'out', private, commit='a' * 40, run_id='7', run_attempt='2')
             finally:
                 os.chdir(cwd)
             for arch in ['arm64', 'x64']:
@@ -47,6 +49,17 @@ class PublicationTests(unittest.TestCase):
             self.assertIn(digests['arm64'], cask)
             self.assertIn(digests['x64'], cask)
             self.assertIn('app "Simple Mac Fixes.app"', cask)
+            with tarfile.open(root / 'out' / 'homebrew-publication.tar.gz') as bundle:
+                self.assertEqual(sorted(bundle.getnames()), ['Casks/simple-mac-fixes.rb', 'SHA256SUMS', 'manifest.json'])
+                manifest = json.load(bundle.extractfile('manifest.json'))
+                self.assertEqual(bundle.extractfile('Casks/simple-mac-fixes.rb').read().decode(), cask)
+                sums = bundle.extractfile('SHA256SUMS').read().decode()
+            self.assertEqual(manifest['product'], 'simple-mac-fixes')
+            self.assertEqual((manifest['channel'], manifest['casks']), ('stable', ['simple-mac-fixes.rb']))
+            self.assertEqual(manifest['release_commit'], 'a' * 40)
+            self.assertEqual(manifest['native_validation']['workflow_run_attempt'], 2)
+            self.assertEqual({a['architecture']: a['sha256'] for a in manifest['artifacts']}, digests)
+            self.assertIn(hashlib.sha256(cask.encode()).hexdigest() + '  Casks/simple-mac-fixes.rb', sums)
 
     def test_rejects_a_key_that_does_not_match_the_app(self):
         other = base64.b64encode(Ed25519PrivateKey.generate().private_bytes_raw()).decode()

@@ -2,12 +2,15 @@
 """Sign the exact release archives for Sparkle and write the feeds and Homebrew cask.
 
 Usage: SPARKLE_PRIVATE_ED_KEY=... prepare_publication.py TAG ASSETS_DIR OUTPUT_DIR
-Writes OUTPUT_DIR/appcasts/stable-{arm64,x64}.xml and OUTPUT_DIR/Casks/simple-mac-fixes.rb.
+Writes OUTPUT_DIR/appcasts/stable-{arm64,x64}.xml, OUTPUT_DIR/Casks/simple-mac-fixes.rb and
+OUTPUT_DIR/homebrew-publication.tar.gz, the sealed bundle apotenza92/homebrew-tap publishes from.
 """
 import argparse
 import base64
 import hashlib
+import json
 import os
+import tarfile
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -85,7 +88,30 @@ end
 '''
 
 
-def prepare(tag, assets, output, private_key):
+def homebrew_bundle(tag, output, artifacts, commit, run_id, run_attempt):
+    """The tap checks this manifest against its registry before committing the cask."""
+    root = output / 'publication'
+    (root / 'Casks').mkdir(parents=True)
+    cask_name = f'{CASK_TOKEN}.rb'
+    (root / 'Casks' / cask_name).write_bytes((output / 'Casks' / cask_name).read_bytes())
+    manifest = dict(
+        schema_version=1, product=CASK_TOKEN, source_repository=REPOSITORY,
+        release_tag=tag, release_commit=commit, channel='stable', casks=[cask_name],
+        artifacts=artifacts, applications={'stable': f'{NAME}.app'},
+        bundle_identifiers={'stable': package(tag, 'stable', 'arm64')['bundle_id']},
+        architectures=[arch for arch, _ in ARCHITECTURES], minimum_macos=MINIMUM_MACOS,
+        native_validation=dict(workflow_run_id=int(run_id), workflow_run_attempt=int(run_attempt),
+                               jobs=[f'package ({arch}, {runner})' for arch, runner in ARCHITECTURES]))
+    (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+    files = [root / 'manifest.json', root / 'Casks' / cask_name]
+    (root / 'SHA256SUMS').write_text(''.join(
+        f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.relative_to(root)}\n' for p in files))
+    with tarfile.open(output / 'homebrew-publication.tar.gz', 'w:gz') as archive:
+        for p in [root / 'SHA256SUMS', *files]:
+            archive.add(p, arcname=str(p.relative_to(root)), recursive=False)
+
+
+def prepare(tag, assets, output, private_key, commit=None, run_id=None, run_attempt=None):
     key = Ed25519PrivateKey.from_private_bytes(base64.b64decode(private_key.strip(), validate=True))
     public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     if public != base64.b64decode(bundled_public_key()):
@@ -94,6 +120,7 @@ def prepare(tag, assets, output, private_key):
     (output / 'appcasts').mkdir(parents=True)
     (output / 'Casks').mkdir(parents=True)
     digests = {}
+    artifacts = []
     for arch, _ in ARCHITECTURES:
         item = package(tag, 'stable', arch)
         data = (assets / item['asset']).read_bytes()
@@ -104,9 +131,15 @@ def prepare(tag, assets, output, private_key):
         signature = key.sign(data)
         key.public_key().verify(signature, data)
         url = f"https://github.com/{REPOSITORY}/releases/download/{tag}/{item['asset']}"
+        artifacts.append(dict(name=item['asset'], url=url, size=len(data), sha256=digest,
+                              channel='stable', architecture=arch))
         ET.ElementTree(appcast(tag, item, url, len(data), signature, notes)).write(
             output / 'appcasts' / f'stable-{arch}.xml', encoding='utf-8', xml_declaration=True)
     (output / 'Casks' / f'{CASK_TOKEN}.rb').write_text(cask(tag, digests))
+    homebrew_bundle(tag, output, artifacts,
+                    commit or os.environ['GITHUB_SHA'],
+                    run_id or os.environ['GITHUB_RUN_ID'],
+                    run_attempt or os.environ['GITHUB_RUN_ATTEMPT'])
 
 
 if __name__ == '__main__':
