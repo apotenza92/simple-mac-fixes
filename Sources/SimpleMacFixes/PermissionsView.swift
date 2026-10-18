@@ -39,6 +39,19 @@ struct PermissionsView: View {
                 model.openPrivacySettings(.inputMonitoring)
             }
 
+            Divider()
+
+            permission(
+                title: "Screen Recording",
+                detail: "Pictures of your windows in Dock previews",
+                status: nil,
+                enabled: model.hasScreenRecordingPermission,
+                actionTitle: model.hasScreenRecordingPermission ? "Open Settings" : "Allow…"
+            ) {
+                if !model.hasScreenRecordingPermission { model.requestScreenRecording() }
+                model.openPrivacySettings(.screenRecording)
+            }
+
             if needsSystemAudio {
                 Divider()
 
@@ -154,7 +167,7 @@ struct SetupGuideView: View {
                                     detail: "Switch desktops straight away, without the slide. Control-Option-Command and a number jumps to that desktop.")
                             Divider()
                             feature("dock.rectangle", title: "The Dock",
-                                    detail: "Click an app with several windows to choose one. Option-click a folder to open it. A hidden Dock appears straight away.")
+                                    detail: "Point at an app to see all its windows and pick one. Option-click a folder to open it. A hidden Dock appears straight away.")
                             Divider()
                             feature("speaker.wave.2", title: "Volume and brightness",
                                     detail: "Volume and brightness keys work with more speakers and screens.")

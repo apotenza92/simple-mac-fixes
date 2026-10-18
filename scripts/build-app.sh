@@ -79,13 +79,17 @@ if [[ "${SIMPLEMACFIXES_RELEASE_BUILD:-0}" == "1" && "${identity}" == "-" ]]; th
 fi
 
 framework="${app_dir}/Contents/Frameworks/Sparkle.framework"
+# Notarization needs Apple's secure timestamp; development builds skip it so an
+# unreachable timestamp server never blocks a local build.
+timestamp="--timestamp"
+[[ "${SIMPLEMACFIXES_RELEASE_BUILD:-0}" == "1" ]] || timestamp="--timestamp=none"
 # Sign nested helpers inside out; preserve Sparkle helper entitlements.
 while IFS= read -r component; do
-    codesign --force --sign "$identity" --options runtime --timestamp --preserve-metadata=entitlements "$component"
+    codesign --force --sign "$identity" --options runtime "$timestamp" --preserve-metadata=entitlements "$component"
 done < <(find "$framework/Versions/B" -depth \( -name "*.xpc" -o -name "*.app" -o -name Autoupdate \))
-codesign --force --sign "$identity" --options runtime --timestamp "$framework"
+codesign --force --sign "$identity" --options runtime "$timestamp" "$framework"
 if [[ "${identity}" != "-" ]]; then
-    codesign --force --sign "${identity}" --options runtime --timestamp \
+    codesign --force --sign "${identity}" --options runtime "$timestamp" \
         --entitlements "${repo_dir}/Resources/SimpleMacFixes.entitlements" "${app_dir}"
 else
     codesign --force --sign - --timestamp=none "${app_dir}"

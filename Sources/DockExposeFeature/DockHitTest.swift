@@ -126,6 +126,32 @@ enum DockHitTest {
         return nil
     }
 
+    /// The running app's Dock icon under `point`, with the icon's frame in
+    /// top-left screen coordinates, so a preview can sit next to it.
+    static func appIcon(at point: CGPoint) -> (bundleIdentifier: String, frame: CGRect)? {
+        _ = stableMetadataObserver
+        guard isNearDockEdge(point), let element = element(at: point), isInDockProcess(element) else { return nil }
+        var current: AXUIElement? = element
+        while let item = current, isInDockProcess(item) {
+            if case let .appDockIcon(bundleIdentifier)? = dockItemKind(for: item) {
+                return frame(of: item).map { (bundleIdentifier, $0) }
+            }
+            current = parent(of: item)
+        }
+        return nil
+    }
+
+    private static func frame(of element: AXUIElement) -> CGRect? {
+        var position: CFTypeRef?, size: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &position) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &size) == .success,
+              let position, let size else { return nil }
+        var origin = CGPoint.zero, extent = CGSize.zero
+        guard AXValueGetValue(position as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
+        return CGRect(origin: origin, size: extent)
+    }
+
     static func pointKind(at point: CGPoint) -> PointKind {
         _ = stableMetadataObserver
         guard isNearDockEdge(point) else { return .outsideDock }
@@ -202,6 +228,44 @@ enum DockHitTest {
         }
 
         return nil
+    }
+
+    nonisolated(unsafe) private static var dockGeometry: (edge: String, thickness: CGFloat, expiresAt: TimeInterval)?
+
+    /// The screen edge the Dock sits on: "bottom", "left" or "right".
+    static var dockEdge: String {
+        _ = isInDockStrip(.zero)
+        stableMetadataLock.lock()
+        defer { stableMetadataLock.unlock() }
+        return dockGeometry?.edge ?? "bottom"
+    }
+
+    /// Whether `point` is in the thin strip the Dock bar occupies, from the Dock's
+    /// own settings. Costs no accessibility query, so it can gate one on the click path.
+    static func isInDockStrip(_ point: CGPoint) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        stableMetadataLock.lock()
+        var geometry = dockGeometry
+        stableMetadataLock.unlock()
+        if geometry == nil || geometry!.expiresAt < now {
+            let domain = "com.apple.dock" as CFString
+            CFPreferencesAppSynchronize(domain)
+            let edge = CFPreferencesCopyAppValue("orientation" as CFString, domain) as? String ?? "bottom"
+            let tile = CFPreferencesCopyAppValue("tilesize" as CFString, domain) as? Double ?? 64
+            var magnified = false
+            if let value = CFPreferencesCopyAppValue("magnification" as CFString, domain) as? NSNumber { magnified = value.boolValue }
+            let large = magnified ? (CFPreferencesCopyAppValue("largesize" as CFString, domain) as? Double ?? tile) : tile
+            geometry = (edge, CGFloat(max(tile, large)) + 24, now + 5)
+            stableMetadataLock.lock()
+            dockGeometry = geometry
+            stableMetadataLock.unlock()
+        }
+        guard let geometry, let bounds = displayBounds(containing: point) else { return false }
+        switch geometry.edge {
+        case "left": return point.x - bounds.minX <= geometry.thickness
+        case "right": return bounds.maxX - point.x <= geometry.thickness
+        default: return bounds.maxY - point.y <= geometry.thickness
+        }
     }
 
     private static func isNearDockEdge(_ point: CGPoint, threshold: CGFloat = 140) -> Bool {
@@ -285,11 +349,15 @@ enum DockHitTest {
             }?.processIdentifier
         }
         stableMetadataLock.unlock()
-        let inDock = pid == dockPID
-        if !inDock {
+        if pid == dockPID { return true }
+        // The Dock relaunches with a new pid whenever it restarts (Instant Dock
+        // does this), and macOS doesn't announce that for background processes.
+        guard NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.apple.dock" else {
             Logger.debug("Element pid \(pid) is not cached Dock pid \(dockPID.map(String.init) ?? "nil").")
+            return false
         }
-        return inDock
+        invalidateDockProcessCache()
+        return true
     }
 
     private static func dockItemKind(for element: AXUIElement) -> PointKind? {

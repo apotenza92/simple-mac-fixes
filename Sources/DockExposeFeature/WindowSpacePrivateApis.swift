@@ -71,7 +71,9 @@ enum WindowSpacePrivateApis {
     }
 
     nonisolated static func spaces(for windowID: CGWindowID) -> Set<Int> {
-        let allSpacesMask: CGSSpaceMask = 0xFFFF_FFFF_FFFF_FFFF
+        // Current, other and user spaces. Setting every bit makes macOS 27 report
+        // ordinary windows on no space and invisible helper windows on the current one.
+        let allSpacesMask: CGSSpaceMask = 0x7
         let ids: CFArray = [NSNumber(value: UInt32(windowID))] as CFArray
         guard let spaces = CGSCopySpacesForWindows(CGSMainConnectionID(),
                                                    allSpacesMask,
@@ -86,6 +88,33 @@ enum WindowSpacePrivateApis {
     nonisolated static func managedSpaceIDs(includeFullScreen: Bool = false) -> [CGSSpaceID] {
         let spaces = managedSpaces()
         return spaces.filter { includeFullScreen || !$0.isFullScreen }.map(\.id)
+    }
+
+    /// The space showing on each display right now. Not cached: it changes with every switch.
+    nonisolated static func activeSpaceIDs() -> Set<CGSSpaceID> {
+        guard let displays = CGSCopyManagedDisplaySpaces(CGSMainConnectionID()) as? [[String: Any]] else {
+            return []
+        }
+        return Set(displays.compactMap { display in
+            guard let current = display["Current Space"] as? [String: Any] else { return nil }
+            return (current["id64"] as? NSNumber)?.uint64Value ?? (current["id64"] as? UInt64)
+        })
+    }
+
+    /// Desktop numbers as Mission Control labels them, per display; full-screen spaces have none.
+    nonisolated static func desktopNumbers() -> [CGSSpaceID: Int] {
+        guard let displays = CGSCopyManagedDisplaySpaces(CGSMainConnectionID()) as? [[String: Any]] else { return [:] }
+        var numbers: [CGSSpaceID: Int] = [:]
+        for display in displays {
+            var number = 0
+            for space in display["Spaces"] as? [[String: Any]] ?? [] {
+                guard (space["type"] as? NSNumber)?.intValue ?? 0 != fullScreenSpaceType,
+                      let id = (space["id64"] as? NSNumber)?.uint64Value else { continue }
+                number += 1
+                numbers[id] = number
+            }
+        }
+        return numbers
     }
 
     nonisolated static func fullScreenSpaceIDs() -> Set<Int> {

@@ -7,7 +7,7 @@ public enum Feature: String, CaseIterable, Identifiable {
     case mouseScrollReversal
     case greenButtonMaximize
     case instantSpaces
-    case dockAppExpose
+    case dockWindowPreviews
     case dockFolderFinder
     case instantDock
 
@@ -20,7 +20,7 @@ public enum Feature: String, CaseIterable, Identifiable {
         case .greenButtonMaximize: "Maximize windows"
         case .instantSpaces: "Instant desktop switching"
         case .instantDock: "Instant Dock"
-        case .dockAppExpose: "Show app windows from the Dock"
+        case .dockWindowPreviews: "Window previews in the Dock"
         case .dockFolderFinder: "Open Dock folders in Finder"
         }
     }
@@ -35,8 +35,9 @@ public enum Feature: String, CaseIterable, Identifiable {
         case .greenButtonMaximize:
             "The green button makes a window fill the screen while keeping the Dock and menu bar. "
                 + "Double-clicking the title bar does the same. Hold Option when clicking for full screen."
-        case .dockAppExpose:
-            "Click an app in the Dock that has several windows open to see them all and choose one."
+        case .dockWindowPreviews:
+            "Point at an app in the Dock with more than one window to see them all, even minimized and hidden ones. "
+                + "Click one to go to it."
         case .dockFolderFinder:
             "Hold Option and click a folder in the Dock to open it in a Finder window."
         case .instantSpaces:
@@ -58,7 +59,7 @@ public enum Feature: String, CaseIterable, Identifiable {
         case .finderCut: .finderCut
         case .mouseScrollReversal: .mouseScrollReversal
         case .greenButtonMaximize: .greenButtonMaximize
-        case .dockAppExpose, .dockFolderFinder: .dockClicks
+        case .dockWindowPreviews, .dockFolderFinder: .dockClicks
         case .instantSpaces: .spaceSwitching
         case .instantDock: .dockHiding
         }

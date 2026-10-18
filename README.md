@@ -11,7 +11,7 @@ A free app that fixes the small things about a Mac that annoy people, especially
 - **Cut and paste files**: press Command-X to cut a file, then Command-V to move it to another folder.
 - **Classic mouse wheel scrolling**: mice scroll in the traditional direction. Trackpads aren't affected.
 - **Maximize windows**: the green button makes a window fill the screen while keeping the Dock and menu bar. Hold Option when clicking for full screen.
-- **Show app windows from the Dock**: click an app with several windows open to see them all and choose one.
+- **Window previews in the Dock**: point at an app with more than one window to see them all, even minimized and hidden ones and windows on other spaces. Click one to go to it, or close, minimize or maximize it from the preview.
 - **Open Dock folders in Finder**: hold Option and click a folder in the Dock.
 - **Instant desktop switching**: your shortcuts for moving between desktops switch straight away, without the slide. Press Control-Option-Command and a number (1–9) to jump to that desktop, or Control-Option-Command-Tab and -~ to go to the next and previous one, round and round.
 - **Instant Dock**: when the Dock is hidden, it appears as soon as you point at it.
@@ -38,6 +38,7 @@ It replaces [Macsimize](https://github.com/apotenza92/macsimize), [Dockmint](htt
 - **Accessibility** (called Device Control on macOS 27): needed for every fix.
 - **Input Monitoring**: only for brightness keys on a separate keyboard while a MacBook is closed.
 - **System Audio Recording**: only for the volume keys on speakers and audio devices the Mac can't control. Sound stays on your Mac and is never recorded or saved.
+- **Screen Recording**: only for the pictures of your windows in Dock previews. Nothing is recorded or saved.
 
 ## Build and run
 

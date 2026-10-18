@@ -13,7 +13,7 @@ final class FeatureController: ObservableObject {
     private let finderCut = FinderCutFeature()
     private let mouseScrollReversal = MouseScrollReversalFeature()
     private let greenButtonMaximize = GreenButtonMaximizeFeature()
-    private let dockAppExpose = DockAppExposeFeature()
+    private let dockPreviews = DockPreviewsFeature()
     private let dockFolderFinder = DockFolderFinderFeature()
     private let instantSpaces = InstantSpacesFeature()
     private let instantDock = InstantDockFeature()
@@ -76,7 +76,7 @@ final class FeatureController: ObservableObject {
         finderCut.stop()
         mouseScrollReversal.stop()
         greenButtonMaximize.stop()
-        dockAppExpose.stop()
+        dockPreviews.stop()
         dockFolderFinder.stop()
         instantSpaces.stop()
         // The Dock goes back to its own settings whenever this app isn't running.
@@ -114,8 +114,10 @@ final class FeatureController: ObservableObject {
              start: mouseScrollReversal.start, stop: mouseScrollReversal.stop)
         sync(.greenButtonMaximize, running: greenButtonMaximize.isRunning, trusted: trusted,
              start: greenButtonMaximize.start, stop: greenButtonMaximize.stop)
-        sync(.dockAppExpose, running: dockAppExpose.isRunning, trusted: trusted,
-             start: dockAppExpose.start, stop: dockAppExpose.stop)
+        // Choosing a window on another desktop jumps there instantly.
+        dockPreviews.switchToSpace = { InstantSpacesFeature.switchInstantly(toSpace: $0) }
+        sync(.dockWindowPreviews, running: dockPreviews.isRunning, trusted: trusted,
+             start: dockPreviews.start, stop: dockPreviews.stop)
         sync(.dockFolderFinder, running: dockFolderFinder.isRunning, trusted: trusted,
              start: dockFolderFinder.start, stop: dockFolderFinder.stop)
         sync(.instantSpaces, running: instantSpaces.isRunning, trusted: trusted,

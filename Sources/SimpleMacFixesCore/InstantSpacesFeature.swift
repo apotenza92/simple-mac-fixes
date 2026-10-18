@@ -137,6 +137,15 @@ public final class InstantSpacesFeature {
         return true
     }
 
+    /// Moves straight to a space on the menu-bar display, without the slide.
+    /// False if the space isn't there, so the caller can fall back to the system.
+    public static func switchInstantly(toSpace spaceID: UInt64) -> Bool {
+        guard let spaces = SkyLight.spaces(), let target = spaces.ids.firstIndex(of: spaceID) else { return false }
+        guard target != spaces.current else { return true }
+        return DockSwipe.post(right: target > spaces.current, steps: abs(target - spaces.current),
+                              naturalScrolling: DockSwipe.naturalScrolling())
+    }
+
     /// The space index to move to, or nil if there is none in that direction.
     static func target(for action: SpaceShortcut.Action, current: Int, spaces isDesktop: [Bool]) -> Int? {
         switch action {

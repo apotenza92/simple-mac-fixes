@@ -115,6 +115,7 @@ enum SkyLight {
     struct Spaces {
         let display: String
         /// Mission Control order; full-screen apps have their own spaces.
+        let ids: [UInt64]
         let isDesktop: [Bool]
         let current: Int
         var count: Int { isDesktop.count }
@@ -133,7 +134,8 @@ enum SkyLight {
             let ids = spaces.map { $0["ManagedSpaceID"] as? UInt64 ?? 0 }
             guard let current = ids.firstIndex(of: active) else { return nil }
             // Type 0 is a desktop; 4 is a full-screen app.
-            return Spaces(display: display, isDesktop: spaces.map { ($0["type"] as? Int ?? 0) == 0 }, current: current)
+            return Spaces(display: display, ids: ids,
+                          isDesktop: spaces.map { ($0["type"] as? Int ?? 0) == 0 }, current: current)
         }
         return nil
     }

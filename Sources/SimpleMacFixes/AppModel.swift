@@ -20,6 +20,8 @@ final class AppModel: ObservableObject {
     /// Every fix needs Accessibility; the feature controller restarts them when it changes.
     var onAccessibilityChange: (() -> Void)?
     @Published private(set) var hasInputMonitoringPermission = BrightnessKeyListener.hasPermission
+    /// Only for the pictures in Dock window previews; without it they show the app icon.
+    @Published private(set) var hasScreenRecordingPermission = CGPreflightScreenCaptureAccess()
 
     private lazy var keyTap = MediaKeyTap { [weak self] key, fine in
         self?.handle(key, fine: fine)
@@ -85,6 +87,9 @@ final class AppModel: ObservableObject {
 
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             Task { @MainActor in
+                if let self, self.hasScreenRecordingPermission != CGPreflightScreenCaptureAccess() {
+                    self.hasScreenRecordingPermission.toggle()
+                }
                 self?.configureKeyCapture(prompt: false)
                 self?.updateBrightnessListener()
             }
@@ -164,13 +169,22 @@ final class AppModel: ObservableObject {
     enum PrivacyPane {
         case accessibility
         case inputMonitoring
+        case screenRecording
     }
 
     func openPrivacySettings(_ pane: PrivacyPane) {
-        permissionFlow.authorize(
-            pane: pane == .accessibility ? .accessibility : .inputMonitoring,
-            suggestedAppURLs: [Bundle.main.bundleURL]
-        )
+        let flowPane: PermissionFlowPane = switch pane {
+        case .accessibility: .accessibility
+        case .inputMonitoring: .inputMonitoring
+        case .screenRecording: .screenRecording
+        }
+        permissionFlow.authorize(pane: flowPane, suggestedAppURLs: [Bundle.main.bundleURL])
+    }
+
+    func requestScreenRecording() {
+        // Adds the app to the list in System Settings the first time.
+        _ = CGRequestScreenCaptureAccess()
+        hasScreenRecordingPermission = CGPreflightScreenCaptureAccess()
     }
 
     func requestSystemAudio() {

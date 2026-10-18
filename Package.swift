@@ -30,7 +30,8 @@ let package = Package(
         // Ported from Dockmint: App Exposé only.
         .target(
             name: "DockExposeFeature",
-            linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("ApplicationServices")]
+            linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("ApplicationServices"),
+                             .linkedFramework("ScreenCaptureKit"), .linkedFramework("SwiftUI")]
         ),
         // Ported from Simple Mac Keyboard Control.
         .target(

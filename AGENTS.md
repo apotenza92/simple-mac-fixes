@@ -10,7 +10,12 @@ Fixes, all on by default:
 - **Classic mouse wheel scrolling**: wheel mice scroll the traditional direction, three lines (30 points) per notch with wheel acceleration removed; high-resolution continuous wheels only change direction. Trackpads and the Magic Mouse keep the System Settings direction.
 - **User-facing text** is plain language for non-technical people: say what they will see happen, no OS names, jargon or system references.
 - **Maximize windows** (from Macsimize): the green button and a title-bar double-click maximize; dragging a maximized window's title bar restores its previous size under the cursor; Option-click on the green button still enters full screen.
-- **Show app windows from the Dock** (from Dockmint, App Exposé only): clicking a running app's Dock icon shows App Exposé when the app has more than one window; with one window the click behaves normally. No sub-options. Full-screen windows are not counted because App Exposé never shows them.
+- **Window previews in the Dock** (a simple take on DockDoor; replaced the Dockmint App Exposé click): pointing at a running app with more than one window opens a Liquid Glass panel of window cards, from a listen-only pointer tap with Dock and window lookups off the main thread.
+  - Windows come from the app's AX list (this space, minimized, hidden, small windows like Settings) plus CGS for other spaces (`DockWindows`); helper windows with no space are dropped. `CGSCopySpacesForWindows` must use mask 7: all bits makes macOS 27 report real windows on no space.
+  - Cards: name above the picture (sliding on hover when truncated), "Space N" / "Minimized" / "Hidden" top right, close/minimize/maximize on hover, glass lighter on hover and lighter again while pressed. Pictures need Screen Recording (`WindowThumbnails`, cached for minimized windows).
+  - Choosing a card unhides, unminimizes and raises; a window on another space is reached with `InstantSpacesFeature.switchInstantly`, then raised after `activeSpaceDidChange`.
+  - The preview sits one 9-point gap above the Dock's name bubble. Once the pointer leaves the icon, the Dock drops its bubble and a picture of it, retaken every 0.1 s while the pointer rests on the icon and cut to the bubble outline, is shown in the same place (`NativeBubbleLocator`, `DockNameBubble`). No picture, no name: there is no drawn fallback.
+  - An auto-hiding Dock is held up while the preview shows (`CoreDockSetAutoHideEnabled`), restored after a crash.
 - **Open Dock folders in Finder** (from Dockmint): only a plain Option-click on a Dock folder is consumed and hit-tested; every other click passes straight through.
 - **Instant desktop switching** (adapted from InSpace / InstantSpaceSwitcher, MIT): a HID-level key tap on its own thread catches the user's own "Move left/right a space" shortcuts (read live from `com.apple.symbolichotkeys`, IDs 79–82) and its own ⌃⌥⌘1–9 (desktop N, counting desktops only like Mission Control) and ⌃⌥⌘Tab / ⌃⌥⌘` (next and previous space, wrapping, counting every space) ahead of the window server, and posts a synthetic Dock swipe fast enough to switch with no animation. The system's "Switch to Desktop N" shortcuts (IDs 118–133) are deliberately left alone, since macOS only offers them for desktops that exist. System shortcut settings are never modified, so nothing needs restoring. Never post past the first or last space (it can wedge the Dock).
 - **Instant Dock**: sets `com.apple.dock` `autohide-delay` and `autohide-time-modifier` to 0 and restarts the Dock while the app runs; the saved originals are restored on quit, when switched off, and on the next launch after a crash. Needs no permission.
@@ -25,7 +30,7 @@ Do not bring back other Dockmint actions, Macsimize's Maximize All/Restore All o
 
 - `SimpleMacFixesCore`: Finder cut, mouse scrolling, the shared `EventTap`, feature catalog, update and setup policy.
 - `MaximizeFeature`: Macsimize's interception and maximize engine; public surface is `GreenButtonMaximizeFeature`.
-- `DockExposeFeature`: Dockmint's Dock hit-testing, window counting and App Exposé invocation; public surface is `DockAppExposeFeature`.
+- `DockExposeFeature`: Dock hit-testing (it re-resolves the Dock's pid after a Dock restart), window previews and Option-click folders; public surface is `DockPreviewsFeature` and `DockFolderFinderFeature`.
 - `KeyboardControlFeature`: Keyboard Control's core, unchanged apart from identifiers.
 - `SimpleMacFixes`: the app: `AppModel` (keyboard control, permissions, setup guide), `FeatureController` (the other fixes), menu, Settings, updates.
 
@@ -34,7 +39,7 @@ Ported code came from the last commits of each source repo (Macsimize 74303c0, D
 ## Safety invariants
 
 - Each feature owns its own event tap and starts, stops and fails independently. One feature must never block or crash another.
-- Permissions are requested only where a feature needs them. Accessibility covers every fix; Input Monitoring is only for raw brightness keys; System Audio Recording only when a fixed-volume output needs software gain.
+- Permissions are requested only where a feature needs them. Accessibility covers every fix; Input Monitoring is only for raw brightness keys; System Audio Recording only when a fixed-volume output needs software gain; Screen Recording only for the pictures in Dock previews and the copied name bubble.
 - When unsure, pass events through unchanged. Finder cut treats unknown focus as text. The Dock tap is listen-only, so the Dock always receives the native click.
 - Event tap handlers stay fast: no file or network IO; AX queries bounded by messaging timeouts; window counting runs off the main thread.
 - Keyboard Control's invariants still apply: the audio path is fail-open; the real-time audio callback allocates no memory, does no IO and takes no locks; software dimming leaves built-in displays alone and disappears on exit; display disabling requires a verified surviving display, arms recovery first and is never persisted.
@@ -48,7 +53,7 @@ Behaviour that unit tests cannot prove needs a manual check on the real Mac, rec
 - Finder: cut/paste files between folders, the desktop and another volume; rename a file and use ⌘X/⌘V in the name; search field; Go to Folder; ⌘Z after a move; non-QWERTY layout.
 - Scrolling: a wheel mouse, a free-spinning wheel (e.g. MX Master), the Magic Mouse and the trackpad, with natural scrolling on and off.
 - Green button: click, Option-click, title-bar double-click, drag a maximized window to restore, multiple displays.
-- Dock: Option-click a folder and a stack (opens Finder, no stack popup), plain-click it (stack as usual), Option-drag it; click an app with one, two and zero windows; an app with a full-screen window plus one normal window; click the same icon again while App Exposé is open; drag an icon to reorder.
+- Dock: Option-click a folder and a stack (opens Finder, no stack popup), plain-click it (stack as usual), Option-drag it; point at an app with one and with several windows (only several opens a preview), including windows minimized, hidden and on another space; choose each kind; use close, minimize and maximize; move from the icon up to the preview (name bubble stays, gaps equal); drag an icon to reorder; repeat with a side Dock and an auto-hiding Dock.
 - Volume and brightness: follow `Tests/KeyboardControlManualTestPlan.md` (from Keyboard Control) for the affected hardware.
 
 Do not run Dock or window automation unprompted: it changes the user's Dock and open windows.
