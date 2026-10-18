@@ -3,21 +3,17 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.0.1</title>
-      <sparkle:version>190000</sparkle:version>
-      <sparkle:shortVersionString>0.0.1</sparkle:shortVersionString>
+      <title>v0.0.2</title>
+      <sparkle:version>290000</sparkle:version>
+      <sparkle:shortVersionString>0.0.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">First release of Simple Mac Fixes: one menu-bar app with a switch for each fix.
-
-- Cut and paste files in Finder with ⌘X and ⌘V.
-- Traditional scrolling for wheel mice; trackpads and the Magic Mouse keep your System Settings direction.
-- Maximize windows with the green button or a title-bar double-click, drag the title bar to restore, and Option-click the green button for full screen.
-- Click a Dock app with more than one window to see them in App Exposé; Option-click a Dock folder to open it in Finder.
-- Volume and brightness keys for audio interfaces, USB DACs and external monitors.
-
-Replaces Macsimize, Dockmint and Simple Mac Keyboard Control, which quit automatically while Simple Mac Fixes runs. Overlapping utilities such as LinearMouse, Mos and DockDoor quit too while the matching fix is on.
+      <description sparkle:format="plain-text">- Cut and paste files now works: press Command-X, then Command-V to move files to another folder.
+- All settings are now in one Settings window. The menu bar icon opens Settings or quits, and you can hide the icon. Open the app again to get back to Settings.
+- Mouse wheels now move the page the same amount for each click.
+- New: Steady pointer speed. The pointer moves the same distance however fast you move the mouse.
+- Clearer descriptions for every setting.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.0.1/Simple-Mac-Fixes-v0.0.1-macos-x64.zip" length="3528715" type="application/octet-stream" sparkle:edSignature="kz/aX+ly9Z+e96P6vRTJ3TrGgyeC5Vr70MN2K84Yo71VhBNfxGg184ocLjpShPYrdF0+3RWTb/oK/o3REXQ7Bg==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.0.2/Simple-Mac-Fixes-v0.0.2-macos-x64.zip" length="3532739" type="application/octet-stream" sparkle:edSignature="9tCoGrYz+kSprguLwAR042SZi1Lf1L8sAnQ6hzaAUU5YRwGkQGH9gv0tfLFZ8eWP8LpAG2SEx3fGc9d8gHDdAA==" />
     </item>
   </channel>
 </rss>
