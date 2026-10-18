@@ -22,13 +22,6 @@ struct AppExposeInvokeResult {
     let frontmostAfter: String
 }
 
-struct AppExposeDispatchReceipt {
-    let dispatched: Bool
-    let strategy: AppExposeInvokeStrategy?
-    let attempts: [String]
-    let frontmostAfterDispatch: String
-}
-
 private struct DockWindowSignature: Hashable {
     let windowNumber: Int
     let layer: Int
@@ -72,10 +65,10 @@ final class AppExposeInvoker {
     private(set) var lastInvokeAttempts: [String] = []
     private(set) var lastForcedStrategy: String?
 
-    @discardableResult
+    /// The Dock is asked off the main thread; `completion` runs on the main thread.
     func invokeApplicationWindows(for bundle: String,
                                   requireEvidence: Bool = true,
-                                  completion: @escaping (AppExposeInvokeResult) -> Void) -> AppExposeDispatchReceipt {
+                                  completion: @escaping (AppExposeInvokeResult) -> Void) {
         Logger.debug("AppExposeInvoker: invokeApplicationWindows called for bundle \(bundle)")
 
         lastResolvedHotKey = nil
@@ -86,7 +79,23 @@ final class AppExposeInvoker {
 
         let baselineDockSignature = dockWindowSignatureSnapshot()
         Logger.debug("AppExposeInvoker: baselineDockWindows=\(baselineDockSignature.count) screenCapture=\(CGPreflightScreenCaptureAccess())")
-        let accessibilityResult = performDockAction(bundle)
+        let performDockAction = self.performDockAction
+        DispatchQueue.global(qos: .userInteractive).async {
+            let accessibilityResult = performDockAction(bundle)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self.finishInvocation(for: bundle, accessibilityResult: accessibilityResult,
+                                          baselineDockSignature: baselineDockSignature,
+                                          requireEvidence: requireEvidence, completion: completion)
+                }
+            }
+        }
+    }
+
+    private func finishInvocation(for bundle: String, accessibilityResult: AXError,
+                                  baselineDockSignature: Set<DockWindowSignature>,
+                                  requireEvidence: Bool,
+                                  completion: @escaping (AppExposeInvokeResult) -> Void) {
         recordAttempt("dockAccessibility result=\(accessibilityResult.rawValue)")
         // Cannot-complete can mean that Dock received the action but its reply timed out.
         // Never send a second toggle after an ambiguous dispatch.
@@ -108,12 +117,6 @@ final class AppExposeInvoker {
         Logger.debug("AppExposeInvoker: target=\(bundle) attempts=\(lastInvokeAttempts)")
         lastInvokeStrategy = strategy
 
-        let receipt = AppExposeDispatchReceipt(
-            dispatched: posted,
-            strategy: strategy,
-            attempts: lastInvokeAttempts,
-            frontmostAfterDispatch: NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "nil"
-        )
 
         guard posted else {
             completion(
@@ -122,7 +125,7 @@ final class AppExposeInvoker {
                     requireEvidence: requireEvidence
                 )
             )
-            return receipt
+            return
         }
 
         guard requireEvidence else {
@@ -136,7 +139,7 @@ final class AppExposeInvoker {
                     requireEvidence: false
                 )
             )
-            return receipt
+            return
         }
 
         Task { [weak self] in
@@ -158,8 +161,6 @@ final class AppExposeInvoker {
                 )
             )
         }
-
-        return receipt
     }
 
     func isApplicationWindowsHotKeyConfigured() -> Bool {

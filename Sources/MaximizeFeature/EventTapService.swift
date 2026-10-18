@@ -220,6 +220,13 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
         if shouldBypassInterception(for: event.location) {
             return Unmanaged.passUnretained(event)
         }
+        // Most clicks are nowhere near a title bar; never make them wait on the app.
+        guard WindowControlZone.mayContainWindowControls(at: event.location,
+                                                         windows: WindowControlZone.onScreenWindows()) else {
+            controller.reset()
+            titleBarController.reset()
+            return Unmanaged.passUnretained(event)
+        }
 
         let timestamp = ProcessInfo.processInfo.systemUptime
         let greenButtonDecision = controller.handleMouseDown(

@@ -6,6 +6,9 @@ import AppKit
 /// action removed. The tap only listens: the Dock always receives the complete
 /// native click, and App Exposé follows when the app has more than one
 /// window. With one window the click just brings it forward, as usual.
+///
+/// Dock accessibility queries run on a background queue. The main thread also
+/// serves the active event taps, so a busy Dock must never hold it.
 @MainActor
 public final class DockAppExposeFeature {
     private struct PendingClick {
@@ -20,6 +23,9 @@ public final class DockAppExposeFeature {
     private static let dockBundleIdentifier = "com.apple.dock"
 
     private let invoker = AppExposeInvoker()
+    /// Serial, so each click's events reach the main thread in order after its hit-test.
+    private let hitTestQueue = DispatchQueue(label: "com.apotenza.SimpleMacFixes.dockHitTest", qos: .userInteractive)
+    private var hitTestsInFlight = 0
     private var port: CFMachPort?
     private var source: CFRunLoopSource?
     private var activationObserver: NSObjectProtocol?
@@ -75,6 +81,7 @@ public final class DockAppExposeFeature {
         source = nil
         activationObserver = nil
         pending = nil
+        hitTestsInFlight = 0
         resetTracking()
     }
 
@@ -84,23 +91,47 @@ public final class DockAppExposeFeature {
             pending = nil
             if let port { CGEvent.tapEnable(tap: port, enable: true) }
         case .leftMouseDown:
-            mouseDown(at: event.location, flags: event.flags)
+            let location = event.location, flags = event.flags
+            hitTestsInFlight += 1
+            hitTestQueue.async { [weak self] in
+                let kind = DockHitTest.pointKind(at: location)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        self.hitTestsInFlight = max(0, self.hitTestsInFlight - 1)
+                        self.mouseDown(at: location, flags: flags, kind: kind)
+                    }
+                }
+            }
         case .leftMouseDragged:
-            if let pending, distance(pending.location, event.location) >= Self.dragThreshold {
+            let location = event.location
+            afterPendingHitTests { [weak self] in
+                guard let self, let pending = self.pending,
+                      self.distance(pending.location, location) >= Self.dragThreshold else { return }
                 // Dragging reorders or removes Dock items.
                 self.pending = nil
             }
         case .leftMouseUp:
-            mouseUp(at: event.location)
+            let location = event.location
+            afterPendingHitTests { [weak self] in self?.mouseUp(at: location) }
         default:
             break
         }
     }
 
-    private func mouseDown(at location: CGPoint, flags: CGEventFlags) {
+    /// Runs after any hit-test still in progress, so a release never overtakes its press.
+    private func afterPendingHitTests(_ work: @escaping @MainActor () -> Void) {
+        guard pending != nil || hitTestsInFlight > 0 else { return }
+        guard hitTestsInFlight > 0 else { return work() }
+        hitTestQueue.async {
+            DispatchQueue.main.async { MainActor.assumeIsolated { work() } }
+        }
+    }
+
+    private func mouseDown(at location: CGPoint, flags: CGEventFlags, kind: DockHitTest.PointKind) {
         clickToken &+= 1
         pending = nil
-        guard case let .appDockIcon(bundleIdentifier) = DockHitTest.pointKind(at: location) else {
+        guard case let .appDockIcon(bundleIdentifier) = kind else {
             if exposeBundleIdentifier != nil { resetTracking() }
             return
         }

@@ -13,6 +13,8 @@ A free app that fixes the small things about a Mac that annoy people, especially
 - **Maximize windows**: the green button makes a window fill the screen while keeping the Dock and menu bar. Hold Option when clicking for full screen.
 - **Show app windows from the Dock**: click an app with several windows open to see them all and choose one.
 - **Open Dock folders in Finder**: hold Option and click a folder in the Dock.
+- **Instant desktop switching**: your shortcuts for moving between desktops switch straight away, without the slide. Press Control-Option-Command and a number (1–9) to jump to that desktop, or Control-Option-Command-Tab and -~ to go to the next and previous one, round and round.
+- **Instant Dock**: when the Dock is hidden, it appears as soon as you point at it.
 - **Volume and brightness keys everywhere**: the keys also work with more speakers, audio devices and external monitors.
 
 ## Install

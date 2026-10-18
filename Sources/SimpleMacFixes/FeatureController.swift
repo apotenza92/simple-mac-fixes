@@ -15,6 +15,8 @@ final class FeatureController: ObservableObject {
     private let greenButtonMaximize = GreenButtonMaximizeFeature()
     private let dockAppExpose = DockAppExposeFeature()
     private let dockFolderFinder = DockFolderFinderFeature()
+    private let instantSpaces = InstantSpacesFeature()
+    private let instantDock = InstantDockFeature()
     private var workspaceObservers: [NSObjectProtocol] = []
     private var runningAppsObservation: NSKeyValueObservation?
 
@@ -76,6 +78,9 @@ final class FeatureController: ObservableObject {
         greenButtonMaximize.stop()
         dockAppExpose.stop()
         dockFolderFinder.stop()
+        instantSpaces.stop()
+        // The Dock goes back to its own settings whenever this app isn't running.
+        instantDock.restore()
     }
 
     private func quitIfReplaced(_ app: NSRunningApplication) {
@@ -113,6 +118,11 @@ final class FeatureController: ObservableObject {
              start: dockAppExpose.start, stop: dockAppExpose.stop)
         sync(.dockFolderFinder, running: dockFolderFinder.isRunning, trusted: trusted,
              start: dockFolderFinder.start, stop: dockFolderFinder.stop)
+        sync(.instantSpaces, running: instantSpaces.isRunning, trusted: trusted,
+             start: instantSpaces.start, stop: instantSpaces.stop)
+        // Needs no permission. Also undoes a previous run's change after a crash.
+        sync(.instantDock, running: instantDock.isApplied, trusted: true,
+             start: { [instantDock] in instantDock.apply(); return true }, stop: instantDock.restore)
     }
 
     private func sync(_ feature: Feature, running: Bool, trusted: Bool,

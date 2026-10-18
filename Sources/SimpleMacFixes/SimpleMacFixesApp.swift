@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import KeyboardControlFeature
 
 @main
@@ -30,6 +31,10 @@ final class SimpleMacFixesApp: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Several fixes ask the app under the pointer about a click while the click
+        // waits. The system default of 6 seconds lets one busy app freeze every
+        // click; set on the system-wide element, this limit applies to every query.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 0.3)
         let model = AppModel()
         let features = FeatureController()
         let updates = UpdateManager()

@@ -6,8 +6,10 @@ public enum Feature: String, CaseIterable, Identifiable {
     case finderCut
     case mouseScrollReversal
     case greenButtonMaximize
+    case instantSpaces
     case dockAppExpose
     case dockFolderFinder
+    case instantDock
 
     public var id: String { rawValue }
 
@@ -16,6 +18,8 @@ public enum Feature: String, CaseIterable, Identifiable {
         case .finderCut: "Cut and paste files"
         case .mouseScrollReversal: "Classic mouse wheel scrolling"
         case .greenButtonMaximize: "Maximize windows"
+        case .instantSpaces: "Instant desktop switching"
+        case .instantDock: "Instant Dock"
         case .dockAppExpose: "Show app windows from the Dock"
         case .dockFolderFinder: "Open Dock folders in Finder"
         }
@@ -35,6 +39,12 @@ public enum Feature: String, CaseIterable, Identifiable {
             "Click an app in the Dock that has several windows open to see them all and choose one."
         case .dockFolderFinder:
             "Hold Option and click a folder in the Dock to open it in a Finder window."
+        case .instantSpaces:
+            "Your shortcuts for moving between desktops switch straight away, without the slide. "
+                + "Press Control-Option-Command and a number to jump to that desktop, "
+                + "or Tab and the ~ key to go round them all."
+        case .instantDock:
+            "When the Dock is hidden, it appears as soon as you point at it."
         }
     }
 
@@ -49,6 +59,8 @@ public enum Feature: String, CaseIterable, Identifiable {
         case .mouseScrollReversal: .mouseScrollReversal
         case .greenButtonMaximize: .greenButtonMaximize
         case .dockAppExpose, .dockFolderFinder: .dockClicks
+        case .instantSpaces: .spaceSwitching
+        case .instantDock: .dockHiding
         }
     }
 }
@@ -57,7 +69,7 @@ public enum Feature: String, CaseIterable, Identifiable {
 /// while the overlapping fix is on; Settings notes any that keep running.
 public struct ConflictingApp: Equatable {
     public enum Area: Equatable {
-        case finderCut, mouseScrollReversal, greenButtonMaximize, dockClicks, keyboardControl
+        case finderCut, mouseScrollReversal, greenButtonMaximize, spaceSwitching, dockClicks, dockHiding, keyboardControl
     }
 
     public let name: String
@@ -76,6 +88,8 @@ public struct ConflictingApp: Equatable {
         ConflictingApp(name: "Dockmint", bundleIdentifier: "pzc.Dockmint", area: .dockClicks, isReplaced: true),
         ConflictingApp(name: "Docktor", bundleIdentifier: "pzc.Docktor", area: .dockClicks, isReplaced: true),
         ConflictingApp(name: "DockDoor", bundleIdentifier: "com.ethanbills.DockDoor", area: .dockClicks),
+        ConflictingApp(name: "InSpace", bundleIdentifier: "com.gameslayer999.inspace", area: .spaceSwitching),
+        ConflictingApp(name: "Blink", bundleIdentifier: "com.thekoppe.Blink", area: .spaceSwitching),
         ConflictingApp(name: "Simple Mac Keyboard Control", bundleIdentifier: "com.apotenza.KeyControl", area: .keyboardControl, isReplaced: true),
     ]
 

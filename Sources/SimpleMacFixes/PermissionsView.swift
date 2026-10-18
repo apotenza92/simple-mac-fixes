@@ -118,7 +118,7 @@ struct PermissionsView: View {
 }
 
 struct SetupGuideView: View {
-    static let windowSize = NSSize(width: 480, height: 620)
+    static let windowSize = NSSize(width: 480, height: 780)
     @ObservedObject var model: AppModel
     private var step: Int { model.setupStep }
 
@@ -150,8 +150,11 @@ struct SetupGuideView: View {
                             feature("macwindow", title: "Maximize windows",
                                     detail: "The green button makes a window fill the screen.")
                             Divider()
+                            feature("rectangle.split.3x1", title: "Desktops",
+                                    detail: "Switch desktops straight away, without the slide. Control-Option-Command and a number jumps to that desktop.")
+                            Divider()
                             feature("dock.rectangle", title: "The Dock",
-                                    detail: "Click an app with several windows to choose one. Option-click a folder to open it.")
+                                    detail: "Click an app with several windows to choose one. Option-click a folder to open it. A hidden Dock appears straight away.")
                             Divider()
                             feature("speaker.wave.2", title: "Volume and brightness",
                                     detail: "Volume and brightness keys work with more speakers and screens.")
