@@ -16,15 +16,11 @@ Simple Mac Fixes merges Macsimize, Dockmint (App Exposé only) and Simple Mac Ke
 
 1. **Hardware testing** of every fix (checklist in `AGENTS.md`).
 2. ~~**Homebrew automation**~~ done: the tap publishes from the attested bundle on each release.
-3. **Website** on GitHub Pages in the same style as the other apps.
+3. ~~**Website**~~ done: https://apotenza92.github.io/simple-mac-fixes/.
 4. **Migration**:
    - Import settings from the old apps' defaults domains on first launch.
-   - Detect the old apps running; offer to quit them and move them to the Trash.
    - Explain in the setup guide that permissions must be granted again for the new app.
-5. **Retire the old apps**:
-   - Ship a final "moved to Simple Mac Fixes" release of each through its existing appcast.
-   - Deprecate the old Homebrew casks, close issues, add README banners.
-   - Archive the old repos a few weeks later, after confirming archived appcasts and Pages still serve.
+5. ~~**Retire the old apps**~~ done 2026-10-18: README and download-page notices, casks deprecated with `replacement_cask: "simple-mac-fixes"` (disabled by Homebrew on 2027-10-18), repos archived, the tap's KeyControl reconcile disabled. Old update feeds and pages still serve. Not done: a final in-app "moved" release through the old appcasts, so people who installed without Homebrew aren't told inside the old app (unarchive a repo to ship one).
 
 ## Open questions
 
