@@ -8,7 +8,6 @@ Fixes, all on by default:
 
 - **Cut and paste files**: ⌘X in Finder is dropped and a fresh ⌘C is typed so Finder copies and the cut is remembered; the next ⌘V is replaced by Finder's own ⌘⌥V (Move Item Here). Editing the key press in place does not reach Finder's menus. The key's target process decides whether Finder is in front, since the workspace frontmost app lags. Text fields are never remapped.
 - **Classic mouse wheel scrolling**: wheel mice scroll the traditional direction, three lines (30 points) per notch with wheel acceleration removed; high-resolution continuous wheels only change direction. Trackpads and the Magic Mouse keep the System Settings direction.
-- **Steady pointer speed**: mirrors System Settings › Mouse › Pointer acceleration (`com.apple.mouse.linear`) and applies it live with `HIDUseLinearScalingMouseAcceleration` through `IOHIDSetCFTypeParameter`. No custom curve.
 - **User-facing text** is plain language for non-technical people: say what they will see happen, no OS names, jargon or system references.
 - **Maximize windows** (from Macsimize): the green button and a title-bar double-click maximize; dragging a maximized window's title bar restores its previous size under the cursor; Option-click on the green button still enters full screen.
 - **Show app windows from the Dock** (from Dockmint, App Exposé only): clicking a running app's Dock icon shows App Exposé when the app has more than one window; with one window the click behaves normally. No sub-options. Full-screen windows are not counted because App Exposé never shows them.

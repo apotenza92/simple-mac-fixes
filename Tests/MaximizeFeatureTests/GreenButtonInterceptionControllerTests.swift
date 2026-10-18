@@ -19,6 +19,16 @@ final class GreenButtonInterceptionControllerTests: XCTestCase {
         XCTAssertEqual(match, 1)
     }
 
+    func testClicksInTheGreenButtonsTileMenuAreNotGreenButtonClicks() {
+        let button = CGRect(x: 52, y: 10, width: 14, height: 14)
+        XCTAssertTrue(AccessibilityService.isClick(at: CGPoint(x: 59, y: 17), onButtonFrame: button))
+        XCTAssertTrue(AccessibilityService.isClick(at: CGPoint(x: 70, y: 28), onButtonFrame: button))
+        // Move & Resize and Fill & Arrange tiles sit well below the button.
+        XCTAssertFalse(AccessibilityService.isClick(at: CGPoint(x: 80, y: 60), onButtonFrame: button))
+        XCTAssertFalse(AccessibilityService.isClick(at: CGPoint(x: 150, y: 120), onButtonFrame: button))
+        XCTAssertTrue(AccessibilityService.isClick(at: CGPoint(x: 150, y: 120), onButtonFrame: nil))
+    }
+
     func testBestFrameMatchIndexReturnsNilWhenPointMissesAllCandidates() {
         let frames = [CGRect(x: 10, y: 10, width: 16, height: 16)]
 

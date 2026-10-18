@@ -317,6 +317,12 @@ final class AccessibilityService: @unchecked Sendable {
             .offset
     }
 
+    /// A click belongs to the button only near its frame; an unknown frame keeps the old behaviour.
+    static func isClick(at point: CGPoint, onButtonFrame frame: CGRect?, tolerance: CGFloat = 8) -> Bool {
+        guard let frame else { return true }
+        return frame.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+    }
+
     static func trafficLightHotZone(
         for windowFrame: CGRect,
         width: CGFloat = 180,
@@ -600,6 +606,13 @@ final class AccessibilityService: @unchecked Sendable {
 
     private func resolveGreenButton(from hitElement: AXUIElement, clickLocation: CGPoint) -> AXUIElement? {
         if let directMatch = nearestGreenButton(from: hitElement) {
+            // The green button's tile menu (Move & Resize, Fill & Arrange) belongs to
+            // the button, so a click there finds the button too and must pass through.
+            guard Self.isClick(at: clickLocation, onButtonFrame: AXHelpers.cgRect(of: directMatch),
+                               tolerance: greenButtonHitTolerance) else {
+                diagnostics.logMessage("Click inside the green button's menu passed through.")
+                return nil
+            }
             return directMatch
         }
 

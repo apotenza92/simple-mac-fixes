@@ -25,15 +25,6 @@ struct SettingsView: View {
                         Text(feature.title)
                         Text(feature.detail)
                     }
-                    if feature == .mouseScrollReversal {
-                        Toggle(isOn: Binding(
-                            get: { features.isMouseAccelerationOff },
-                            set: { features.setMouseAccelerationOff($0) }
-                        )) {
-                            Text("Steady pointer speed")
-                            Text("The pointer moves the same distance however fast you move the mouse. Trackpads aren’t affected.")
-                        }
-                    }
                     if isLastInArea(feature) {
                         conflictNote(for: feature.conflictArea, active: features.isEnabled(feature))
                     }
@@ -134,10 +125,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        // The acceleration switch mirrors System Settings, which can change it too.
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            features.objectWillChange.send()
-        }
         .frame(width: 520, height: 680)
     }
 

@@ -10,7 +10,6 @@ A free app that fixes the small things about a Mac that annoy people, especially
 
 - **Cut and paste files**: press Command-X to cut a file, then Command-V to move it to another folder.
 - **Classic mouse wheel scrolling**: mice scroll in the traditional direction. Trackpads aren't affected.
-- **Steady pointer speed** (off by default): the pointer moves the same distance however fast you move the mouse.
 - **Maximize windows**: the green button makes a window fill the screen while keeping the Dock and menu bar. Hold Option when clicking for full screen.
 - **Show app windows from the Dock**: click an app with several windows open to see them all and choose one.
 - **Open Dock folders in Finder**: hold Option and click a folder in the Dock.
