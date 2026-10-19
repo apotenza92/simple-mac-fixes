@@ -1364,6 +1364,23 @@ final class AccessibilityService: @unchecked Sendable {
         return fallbackWindowID
     }
 
+    /// A window's context as if its green button had been clicked.
+    func context(forWindow window: AXUIElement) -> ClickedWindowContext? {
+        guard let app = NSRunningApplication(processIdentifier: AXHelpers.pid(of: window)) else { return nil }
+        let button = AXHelpers.elementAttribute(kAXFullScreenButtonAttribute as String, on: window)
+            ?? AXHelpers.elementAttribute(kAXZoomButtonAttribute as String, on: window)
+            ?? window
+        return windowContext(
+            for: window,
+            app: app,
+            clickLocation: .zero,
+            sourceElement: button,
+            role: AXHelpers.stringAttribute(kAXRoleAttribute as String, on: button),
+            subrole: AXHelpers.stringAttribute(kAXSubroleAttribute as String, on: button),
+            actions: AXHelpers.actions(for: button)
+        )
+    }
+
     private func context(for buttonElement: AXUIElement, app: NSRunningApplication, clickLocation: CGPoint) -> ClickedWindowContext? {
         guard let windowElement = AXHelpers.window(of: buttonElement) else {
             diagnostics.logMessage("AX hit-test found green button but no parent window for pid=\(app.processIdentifier).")

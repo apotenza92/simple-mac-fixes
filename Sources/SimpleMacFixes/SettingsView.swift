@@ -18,15 +18,29 @@ struct SettingsView: View {
         Form {
             Section("Fixes") {
                 ForEach(Feature.allCases) { feature in
-                    Toggle(isOn: Binding(
-                        get: { features.isEnabled(feature) },
-                        set: { features.setEnabled(feature, $0) }
-                    )) {
-                        Text(feature.title)
-                        Text(feature.detail)
+                    Group {
+                        Toggle(isOn: Binding(
+                            get: { features.isEnabled(feature) },
+                            set: { features.setEnabled(feature, $0) }
+                        )) {
+                            Text(feature.title)
+                            // Inside the switch's own row, so the shortcuts stay with it.
+                            if feature.shortcuts.isEmpty {
+                                Text(feature.detail)
+                            } else {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(feature.detail)
+                                    ShortcutList(shortcuts: feature.shortcuts)
+                                }
+                            }
+                        }
                     }
+                    // A fix that needs another sits under it, and waits while that's off.
+                    .padding(.leading, feature.parent == nil ? 0 : 20)
+                    .disabled(feature.parent.map { !features.isActive($0) } ?? false)
                     if isLastInArea(feature) {
-                        conflictNote(for: feature.conflictArea, active: features.isEnabled(feature))
+                        conflictNote(for: feature.conflictArea,
+                                     active: Feature.allCases.contains { $0.conflictArea == feature.conflictArea && features.isActive($0) })
                     }
                 }
             }
@@ -119,10 +133,6 @@ struct SettingsView: View {
                 PermissionsView(model: model)
                     .padding(.vertical, 4)
             }
-
-            Section {
-                Button("Show Setup Guide…") { model.showSetupGuide() }
-            }
         }
         .formStyle(.grouped)
         .frame(width: 520, height: 680)
@@ -194,5 +204,34 @@ final class SettingsWindowController {
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+}
+
+/// Keyboard shortcuts as keycaps beside what they do.
+private struct ShortcutList: View {
+    let shortcuts: [(keys: [String], action: String)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
+                ForEach(shortcuts.indices, id: \.self) { index in
+                    GridRow {
+                        HStack(spacing: 3) {
+                            ForEach(shortcuts[index].keys, id: \.self) { key in
+                                Text(key)
+                                    .font(.callout)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            }
+                        }
+                        Text(shortcuts[index].action)
+                    }
+                }
+            }
+            Text(Feature.keyNames)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
     }
 }

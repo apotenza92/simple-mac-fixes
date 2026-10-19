@@ -46,14 +46,20 @@ public enum SpaceShortcuts {
         79: (123, .maskControl), 81: (124, .maskControl),
     ]
 
-    public static func current() -> [SpaceShortcut] {
-        let domain = "com.apple.symbolichotkeys" as CFString
-        CFPreferencesAppSynchronize(domain)
-        let hotKeys = CFPreferencesCopyAppValue("AppleSymbolicHotKeys" as CFString, domain) as? [String: Any]
-        return parse(hotKeys)
+    /// The system's left and right shortcuts and, separately, this app's own desktop shortcuts.
+    public static func current(system: Bool, jumps: Bool) -> [SpaceShortcut] {
+        var shortcuts: [SpaceShortcut] = []
+        if system {
+            let domain = "com.apple.symbolichotkeys" as CFString
+            CFPreferencesAppSynchronize(domain)
+            shortcuts = parse(CFPreferencesCopyAppValue("AppleSymbolicHotKeys" as CFString, domain) as? [String: Any])
+        }
+        // The system's own shortcuts come first if someone has given one the same keys.
+        return shortcuts + (jumps ? desktopJumps : [])
     }
 
-    /// `hotKeys` is the `AppleSymbolicHotKeys` dictionary, keyed by shortcut ID.
+    /// The system's move-left and move-right shortcuts. `hotKeys` is the
+    /// `AppleSymbolicHotKeys` dictionary, keyed by shortcut ID.
     public static func parse(_ hotKeys: [String: Any]?) -> [SpaceShortcut] {
         var shortcuts: [SpaceShortcut] = []
         for id in leftIDs + rightIDs {
@@ -74,8 +80,7 @@ public enum SpaceShortcuts {
             let modifiers = CGEventFlags(rawValue: parameters[2].uint64Value).intersection(modifierMask)
             shortcuts.append(SpaceShortcut(keyCode: keyCode, modifiers: modifiers, action: action))
         }
-        // The system's own shortcuts come first if someone has given one the same keys.
-        return shortcuts + desktopJumps
+        return shortcuts
     }
 
     public static func match(keyCode: Int64, flags: CGEventFlags, in shortcuts: [SpaceShortcut]) -> SpaceShortcut? {

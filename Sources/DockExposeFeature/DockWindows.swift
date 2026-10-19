@@ -34,19 +34,26 @@ enum DockWindows {
         let pids = Set(apps.map(\.processIdentifier))
         let hidden = apps.contains(where: \.isHidden)
 
-        // Front to back across every desktop; also gives sizes and window-server titles.
+        // Every desktop's windows, with sizes and window-server titles. This list isn't
+        // in front-to-back order; the on-screen list below is.
         let entries = (CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []).filter {
             pids.contains(($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0)
                 && ($0[kCGWindowLayer as String] as? Int) == 0
         }
         var order: [CGWindowID: Int] = [:]
+        let onScreen = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []).compactMap { entry -> CGWindowID? in
+            guard pids.contains((entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value ?? 0) else { return nil }
+            return (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value
+        }
+        for (index, id) in onScreen.enumerated() { order[id] = index }
         var info: [CGWindowID: (bounds: CGRect, title: String, alpha: Double)] = [:]
         for (index, entry) in entries.enumerated() {
             guard let id = (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
                   let boundsInfo = entry[kCGWindowBounds as String] as? NSDictionary,
                   let bounds = CGRect(dictionaryRepresentation: boundsInfo) else { continue }
-            order[id] = index
+            if order[id] == nil { order[id] = onScreen.count + index }
             info[id] = (bounds, entry[kCGWindowName as String] as? String ?? "",
                         entry[kCGWindowAlpha as String] as? Double ?? 1)
         }
@@ -81,7 +88,19 @@ enum DockWindows {
                 ? .hidden : .otherDesktop(number: desktops[UInt64(space)], spaceID: UInt64(space))
             result.append(DockWindow(id: id, processIdentifier: pid, title: window.title, place: place, bounds: window.bounds))
         }
-        return result.sorted { (order[$0.id] ?? .max) < (order[$1.id] ?? .max) }
+        // Most recent first: windows here front to back, then those on other desktops,
+        // then minimized and hidden ones, each group in the window server's order.
+        func group(_ window: DockWindow) -> Int {
+            switch window.place {
+            case .here: 0
+            case .otherDesktop: 1
+            case .minimized: 2
+            case .hidden: 3
+            }
+        }
+        return result.sorted {
+            (group($0), order[$0.id] ?? .max) < (group($1), order[$1.id] ?? .max)
+        }
     }
 
     enum Control { case close, minimize, maximize }
@@ -98,16 +117,16 @@ enum DockWindows {
         case .minimize:
             AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
         case .maximize:
-            // Fill the screen it's on, keeping the Dock and menu bar, like Maximize windows.
-            guard let screen = screenFrame(containing: window.bounds) else { return }
-            var origin = screen.origin, size = screen.size
-            if let position = AXValueCreate(.cgPoint, &origin) {
-                AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, position)
-            }
-            if let extent = AXValueCreate(.cgSize, &size) {
-                AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, extent)
-            }
-            AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            toggleFullScreen(element)
+        }
+    }
+
+    /// The green button's own behaviour: into full screen, or back out of it.
+    static func toggleFullScreen(_ element: AXUIElement) {
+        let isFullScreen = (copy(element, "AXFullScreen") as? Bool) ?? false
+        let error = AXUIElementSetAttributeValue(element, "AXFullScreen" as CFString, (!isFullScreen) as CFBoolean)
+        if error != .success, let button = copy(element, kAXFullScreenButtonAttribute) {
+            AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
         }
     }
 

@@ -6,10 +6,11 @@ public enum Feature: String, CaseIterable, Identifiable {
     case finderCut
     case mouseScrollReversal
     case greenButtonMaximize
-    case instantSpaces
     case dockWindowPreviews
     case dockFolderFinder
     case instantDock
+    case instantSpaces
+    case desktopShortcuts
 
     public var id: String { rawValue }
 
@@ -18,7 +19,8 @@ public enum Feature: String, CaseIterable, Identifiable {
         case .finderCut: "Cut and paste files"
         case .mouseScrollReversal: "Classic mouse wheel scrolling"
         case .greenButtonMaximize: "Maximize windows"
-        case .instantSpaces: "Instant desktop switching"
+        case .instantSpaces: "Instant space switching"
+        case .desktopShortcuts: "Space shortcuts"
         case .instantDock: "Instant Dock"
         case .dockWindowPreviews: "Window previews in the Dock"
         case .dockFolderFinder: "Open Dock folders in Finder"
@@ -37,20 +39,50 @@ public enum Feature: String, CaseIterable, Identifiable {
                 + "Double-clicking the title bar does the same. Hold Option when clicking for full screen."
         case .dockWindowPreviews:
             "Point at an app in the Dock with more than one window to see them all, even minimized and hidden ones. "
-                + "Click one to go to it."
+                + "Click one to go to it, or scroll on the app to bring each one forward."
         case .dockFolderFinder:
             "Hold Option and click a folder in the Dock to open it in a Finder window."
         case .instantSpaces:
-            "Your shortcuts for moving between desktops switch straight away, without the slide. "
-                + "Press Control-Option-Command and a number to jump to that desktop, "
-                + "or Tab and the ~ key to go round them all."
+            "Moving between spaces with your keyboard shortcuts happens straight away, without the slide."
+        case .desktopShortcuts:
+            "Extra keyboard shortcuts for getting around your spaces."
         case .instantDock:
             "When the Dock is hidden, it appears as soon as you point at it."
         }
     }
 
-    /// Defaults should suit someone who just wants their Mac to behave.
-    public var enabledByDefault: Bool { true }
+    /// A fix that only works while another is on, shown under it.
+    public var parent: Feature? {
+        self == .desktopShortcuts ? .instantSpaces : nil
+    }
+
+    /// Shortcuts the fix adds, as keys to press and what they do, for listing under it.
+    public var shortcuts: [(keys: [String], action: String)] {
+        switch self {
+        case .desktopShortcuts:
+            [(["⌃", "⌥", "⌘", "1 – 9"], "Go to that space"),
+             (["⌃", "⌥", "⌘", "Tab"], "Next space"),
+             (["⌃", "⌥", "⌘", "~"], "Previous space")]
+        default: []
+        }
+    }
+
+    /// Spells out the key symbols used in `shortcuts`.
+    public static let keyNames = "⌃ = Control   ⌥ = Option   ⌘ = Command\n"
+        + "Together they're often known as Hyper key without Shift."
+
+    /// Defaults should suit someone who just wants their Mac to behave. Changes to how
+    /// the Dock and spaces feel, and new shortcuts that could clash with ones people
+    /// already use, wait to be turned on.
+    public var enabledByDefault: Bool {
+        switch self {
+        case .instantDock, .instantSpaces, .desktopShortcuts: false
+        default: true
+        }
+    }
+
+    /// Fixes that used to start on. Installs from before keep them as they were.
+    public static let formerlyOnByDefault: [Feature] = [.instantDock, .instantSpaces, .desktopShortcuts]
 
     public var defaultsKey: String { "feature.\(rawValue).enabled" }
 
@@ -60,7 +92,7 @@ public enum Feature: String, CaseIterable, Identifiable {
         case .mouseScrollReversal: .mouseScrollReversal
         case .greenButtonMaximize: .greenButtonMaximize
         case .dockWindowPreviews, .dockFolderFinder: .dockClicks
-        case .instantSpaces: .spaceSwitching
+        case .instantSpaces, .desktopShortcuts: .spaceSwitching
         case .instantDock: .dockHiding
         }
     }

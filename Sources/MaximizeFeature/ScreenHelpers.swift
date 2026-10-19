@@ -50,7 +50,7 @@ enum ScreenHelpers {
     }
 
     static func accessibilityRect(forVisibleFrame visibleFrame: CGRect, in screens: [ScreenDescriptor]) -> CGRect {
-        let desktopTopEdge = screens.map(\.frame.maxY).max() ?? visibleFrame.maxY
+        let desktopTopEdge = primaryTopEdge(of: screens) ?? visibleFrame.maxY
         return normalized(
             rect: CGRect(
                 x: visibleFrame.minX,
@@ -62,7 +62,7 @@ enum ScreenHelpers {
     }
 
     static func accessibilityRect(forScreen screen: ScreenDescriptor, in screens: [ScreenDescriptor]) -> CGRect {
-        let desktopTopEdge = screens.map(\.frame.maxY).max() ?? screen.frame.maxY
+        let desktopTopEdge = primaryTopEdge(of: screens) ?? screen.frame.maxY
         return normalized(
             rect: CGRect(
                 x: screen.frame.minX,
@@ -71,6 +71,12 @@ enum ScreenHelpers {
                 height: screen.frame.height
             )
         )
+    }
+
+    /// Window positions are measured down from the top of the main display (the one at the
+    /// origin), not from the top of whichever display sits highest.
+    private static func primaryTopEdge(of screens: [ScreenDescriptor]) -> CGFloat? {
+        (screens.first { $0.frame.origin == .zero } ?? screens.first)?.frame.maxY
     }
 
     static func normalized(rect: CGRect) -> CGRect {

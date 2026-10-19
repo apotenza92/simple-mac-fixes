@@ -227,6 +227,8 @@ final class MaximizeStrategy: MaximizePerforming, @unchecked Sendable {
         return result
     }
 
+    var hasMaximizedWindows: Bool { !frameStore.isEmpty }
+
     func isCurrentlyManagedMaximized(_ context: ClickedWindowContext) -> Bool {
         guard let currentFrame = context.windowFrame,
               let storedState = frameStore.storedState(for: context.windowIdentifier),

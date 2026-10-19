@@ -22,13 +22,35 @@ final class FeatureController: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        Self.migrateDefaults(in: defaults)
         defaults.register(defaults: Dictionary(uniqueKeysWithValues: Feature.allCases.map {
             ($0.defaultsKey, $0.enabledByDefault)
         }))
     }
 
+    /// Some fixes now start off for new installs. Someone who already had the app keeps
+    /// them as they were: on, unless they'd turned them off. The space shortcuts were
+    /// part of instant switching, so they follow it. Runs once.
+    static func migrateDefaults(in defaults: UserDefaults) {
+        let done = "featureDefaultsMigrated"
+        guard !defaults.bool(forKey: done) else { return }
+        defaults.set(true, forKey: done)
+        // A new install, still before setup.
+        guard defaults.bool(forKey: "hasCompletedSetup") else { return }
+        let instantSpaces = defaults.object(forKey: Feature.instantSpaces.defaultsKey) as? Bool ?? true
+        for feature in Feature.formerlyOnByDefault where defaults.object(forKey: feature.defaultsKey) == nil {
+            defaults.set(feature == .desktopShortcuts ? instantSpaces : true, forKey: feature.defaultsKey)
+        }
+    }
+
+    /// The switch itself. Settings shows this one.
     func isEnabled(_ feature: Feature) -> Bool {
         defaults.bool(forKey: feature.defaultsKey)
+    }
+
+    /// Whether the fix runs: on, and its parent on too.
+    func isActive(_ feature: Feature) -> Bool {
+        isEnabled(feature) && (feature.parent.map(isActive) ?? true)
     }
 
     func setEnabled(_ feature: Feature, _ enabled: Bool) {
@@ -90,7 +112,7 @@ final class FeatureController: ObservableObject {
     /// The old apps always; other utilities only while the fix they overlap is on.
     private func shouldQuit(_ bundleIdentifier: String) -> Bool {
         guard let known = ConflictingApp.known.first(where: { $0.matches(bundleIdentifier) }) else { return false }
-        return known.isReplaced || Feature.allCases.contains { $0.conflictArea == known.area && isEnabled($0) }
+        return known.isReplaced || Feature.allCases.contains { $0.conflictArea == known.area && isActive($0) }
     }
 
     private func quitIfReplaced(_ app: NSRunningApplication, attempt: Int) {
@@ -116,12 +138,18 @@ final class FeatureController: ObservableObject {
              start: greenButtonMaximize.start, stop: greenButtonMaximize.stop)
         // Choosing a window on another desktop jumps there instantly.
         dockPreviews.switchToSpace = { InstantSpacesFeature.switchInstantly(toSpace: $0) }
+        dockPreviews.pressGreenButton = { [greenButtonMaximize] window, optionPressed in
+            greenButtonMaximize.pressGreenButton(of: window, optionPressed: optionPressed)
+        }
         sync(.dockWindowPreviews, running: dockPreviews.isRunning, trusted: trusted,
              start: dockPreviews.start, stop: dockPreviews.stop)
         sync(.dockFolderFinder, running: dockFolderFinder.isRunning, trusted: trusted,
              start: dockFolderFinder.start, stop: dockFolderFinder.stop)
-        sync(.instantSpaces, running: instantSpaces.isRunning, trusted: trusted,
-             start: instantSpaces.start, stop: instantSpaces.stop)
+        // Both shortcut features share one key watcher.
+        instantSpaces.configure(systemShortcuts: isActive(.instantSpaces), desktopShortcuts: isActive(.desktopShortcuts))
+        let wantSpaces = trusted && isActive(.instantSpaces)
+        if wantSpaces, !instantSpaces.isRunning { _ = instantSpaces.start() }
+        if !wantSpaces, instantSpaces.isRunning { instantSpaces.stop() }
         // Needs no permission. Also undoes a previous run's change after a crash.
         sync(.instantDock, running: instantDock.isApplied, trusted: true,
              start: { [instantDock] in instantDock.apply(); return true }, stop: instantDock.restore)

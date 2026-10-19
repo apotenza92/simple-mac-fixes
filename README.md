@@ -11,10 +11,11 @@ A free app that fixes the small things about a Mac that annoy people, especially
 - **Cut and paste files**: press Command-X to cut a file, then Command-V to move it to another folder.
 - **Classic mouse wheel scrolling**: mice scroll in the traditional direction. Trackpads aren't affected.
 - **Maximize windows**: the green button makes a window fill the screen while keeping the Dock and menu bar. Hold Option when clicking for full screen.
-- **Window previews in the Dock**: point at an app with more than one window to see them all, even minimized and hidden ones and windows on other spaces. Click one to go to it, or close, minimize or maximize it from the preview.
+- **Window previews in the Dock**: point at an app with more than one window to see them all, even minimized and hidden ones and windows on other spaces. The most recent window comes first and is picked already, so clicking the icon goes to it. Scroll on the icon to bring each window forward in turn, or click one to go to it. Rest on a card to see that window in place at its real size; minimized and hidden windows show dimmed, and scrolling onto one only shows it until you click. Close or minimize windows from the preview. The preview's green button does what the window's own does, so it follows the Maximize windows setting.
 - **Open Dock folders in Finder**: hold Option and click a folder in the Dock.
-- **Instant desktop switching**: your shortcuts for moving between desktops switch straight away, without the slide. Press Control-Option-Command and a number (1–9) to jump to that desktop, or Control-Option-Command-Tab and -~ to go to the next and previous one, round and round.
-- **Instant Dock**: when the Dock is hidden, it appears as soon as you point at it.
+- **Instant Dock** (off until you turn it on): when the Dock is hidden, it appears as soon as you point at it.
+- **Instant space switching** (off until you turn it on): moving between spaces with your keyboard shortcuts happens straight away, without the slide.
+- **Space shortcuts** (under Instant space switching, which needs to be on; off until you turn it on): Control-Option-Command (⌃⌥⌘, often known as Hyper key without Shift) and a number from 1 to 9 goes to that space; ⌃⌥⌘-Tab and ⌃⌥⌘-~ go to the next and previous one, round and round.
 - **Volume and brightness keys everywhere**: the keys also work with more speakers, audio devices and external monitors.
 
 ## Install

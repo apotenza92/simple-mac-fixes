@@ -25,7 +25,7 @@ import Testing
 }
 
 @Test func controlOptionCommandNumbersJumpToDesktopsOneToNine() {
-    let shortcuts = SpaceShortcuts.parse(nil)
+    let shortcuts = SpaceShortcuts.desktopJumps
     let jump: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand]
     #expect(SpaceShortcuts.match(keyCode: 18, flags: jump, in: shortcuts)?.action == .desktop(0))
     #expect(SpaceShortcuts.match(keyCode: 25, flags: jump, in: shortcuts)?.action == .desktop(8))
@@ -86,4 +86,14 @@ import Testing
     #expect(restarts == 2)
     feature.restore()
     #expect(restarts == 2)
+}
+
+@Test func desktopShortcutsAreTheirOwnSwitch() {
+    #expect(!Feature.desktopShortcuts.enabledByDefault)
+    #expect(!Feature.instantSpaces.enabledByDefault)
+    #expect(!Feature.instantDock.enabledByDefault)
+    #expect(Feature.allCases.suffix(3) == [.instantDock, .instantSpaces, .desktopShortcuts])
+    // Instant switching alone never catches Control-Option-Command keys.
+    let jump: CGEventFlags = [.maskControl, .maskAlternate, .maskCommand]
+    #expect(SpaceShortcuts.match(keyCode: 18, flags: jump, in: SpaceShortcuts.parse(nil)) == nil)
 }

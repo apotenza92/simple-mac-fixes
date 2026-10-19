@@ -20,8 +20,10 @@ final class DockNameBubble: NSPanel {
     init() {
         super.init(contentRect: .zero, styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
         isFloatingPanel = true
-        // After isFloatingPanel, which resets the level. Above the Dock's own bubble.
-        level = .popUpMenu
+        // After isFloatingPanel, which resets the level. Above the Dock's own bubble and
+        // the preview: the picture already has the preview's shadow across it, as the
+        // Dock's bubble shows on screen, so it mustn't land on the copy a second time.
+        level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 2)
         hidesOnDeactivate = false
         backgroundColor = .clear
         isOpaque = false
@@ -54,8 +56,9 @@ final class DockNameBubble: NSPanel {
             .interpolation(.none)
             .frame(width: rect.width, height: rect.height, alignment: .topLeading)
             .mask(alignment: .topLeading) {
-                // Half a point past the outline keeps the bubble's soft edge.
-                ZStack { shape.fill(); shape.stroke(lineWidth: 1) }
+                // Past the outline far enough to keep the bubble's soft edge and its
+                // faint shadow underneath; the picture there is the screen as it was.
+                ZStack { shape.fill(); shape.stroke(lineWidth: 6) }
                     .frame(width: outline.width, height: outline.height)
                     .offset(x: outline.minX - rect.minX, y: outline.minY - rect.minY)
             })
@@ -100,25 +103,5 @@ struct BubbleShape: Shape {
                 .concatenating(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.width, ty: 0))
             : CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0)
         return path.applying(turn)
-    }
-}
-
-extension View {
-    /// The Dock bubble's look: glass with a thin dark outline and a lighter top rim,
-    /// both inside the edge so the shape is exactly its frame.
-    @ViewBuilder
-    func dockGlass<S: Shape>(in shape: S) -> some View {
-        let rimmed = overlay {
-            shape.stroke(
-                LinearGradient(colors: [.white.opacity(0.32), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom),
-                lineWidth: 2.5)
-                .clipShape(shape)
-        }
-        .overlay { shape.stroke(.black.opacity(0.55), lineWidth: 1).clipShape(shape) }
-        if #available(macOS 26.0, *) {
-            rimmed.glassEffect(.regular, in: shape)
-        } else {
-            rimmed.background(.regularMaterial, in: shape)
-        }
     }
 }

@@ -2,7 +2,8 @@ import CoreGraphics
 import Foundation
 
 /// Your keyboard shortcuts for moving left and right between desktops switch
-/// instantly, without the slide, and Control-Option-Command-1…9 jumps to a desktop.
+/// instantly, without the slide; separately, Control-Option-Command with a number,
+/// Tab or the ~ key jumps between desktops. Either or both can be on.
 ///
 /// The keys are caught at the HID level, ahead of the window server's own
 /// shortcut handling, so the system's settings never change and nothing needs
@@ -27,6 +28,20 @@ public final class InstantSpacesFeature {
     private var swallowedKeyDowns = Set<Int64>()
     private var predicted: (display: String, index: Int)?
     private var lastSwipe: CFAbsoluteTime = 0
+    // Set from the main thread, read on the tap thread.
+    private var wanted = (system: true, jumps: true)
+
+    /// Which shortcuts are caught: the system's left and right ones, made instant,
+    /// and this app's own desktop shortcuts.
+    public func configure(systemShortcuts: Bool, desktopShortcuts: Bool) {
+        let changed = lock.withLock { () -> Bool in
+            defer { wanted = (systemShortcuts, desktopShortcuts) }
+            return wanted != (systemShortcuts, desktopShortcuts)
+        }
+        guard changed, let runLoop = lock.withLock({ runLoop }) else { return }
+        CFRunLoopPerformBlock(runLoop, CFRunLoopMode.commonModes.rawValue) { [weak self] in self?.refresh() }
+        CFRunLoopWakeUp(runLoop)
+    }
 
     public init() {}
 
@@ -92,7 +107,8 @@ public final class InstantSpacesFeature {
     }
 
     private func refresh() {
-        shortcuts = SpaceShortcuts.current()
+        let wanted = lock.withLock { self.wanted }
+        shortcuts = SpaceShortcuts.current(system: wanted.system, jumps: wanted.jumps)
         naturalScrolling = DockSwipe.naturalScrolling()
     }
 

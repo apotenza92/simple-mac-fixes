@@ -1,3 +1,4 @@
+import Foundation
 import AppKit
 import ScreenCaptureKit
 
@@ -44,6 +45,38 @@ enum NativeBubbleLocator {
     /// A picture of the screen exactly as it is in `rect`, leaving out this app's own
     /// windows: the Dock's bubble with the blurred background behind its glass.
     static func snapshot(of rect: CGRect) async -> (image: CGImage, rect: CGRect)? {
+        guard CGPreflightScreenCaptureAccess() else { return nil }
+        let region = rect.integral
+        // Off the main thread: the main thread must never wait.
+        if let exact = await Task.detached(priority: .userInitiated, operation: { exactSnapshot(of: region) }).value {
+            return (exact, region)
+        }
+        return await screenCaptureKitSnapshot(of: rect)
+    }
+
+    private typealias DisplayImageForRect = @convention(c) (CGDirectDisplayID, CGRect) -> Unmanaged<CGImage>?
+    /// The screen's pixels exactly as shown, window shadows included. Retired in the
+    /// SDK but still in the system, so it's looked up at run time.
+    private static let displayImageForRect: DisplayImageForRect? = {
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGDisplayCreateImageForRect") else { return nil }
+        return unsafeBitCast(symbol, to: DisplayImageForRect.self)
+    }()
+
+    /// The Dock's bubble as it looks on screen, including the preview's shadow over it.
+    /// Screen capture through ScreenCaptureKit leaves out part of the window shadows,
+    /// which the bubble's glass shows blurred, so its copy came out lighter.
+    private static func exactSnapshot(of region: CGRect) -> CGImage? {
+        guard let displayImageForRect else { return nil }
+        var count: UInt32 = 0
+        var displays = [CGDirectDisplayID](repeating: 0, count: 16)
+        guard CGGetDisplaysWithPoint(CGPoint(x: region.midX, y: region.midY), 16, &displays, &count) == .success,
+              count > 0 else { return nil }
+        let display = displays[0]
+        let bounds = CGDisplayBounds(display)
+        return displayImageForRect(display, region.offsetBy(dx: -bounds.minX, dy: -bounds.minY))?.takeRetainedValue()
+    }
+
+    private static func screenCaptureKitSnapshot(of rect: CGRect) async -> (image: CGImage, rect: CGRect)? {
         guard CGPreflightScreenCaptureAccess(),
               let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         else { return nil }

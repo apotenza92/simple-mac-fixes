@@ -21,6 +21,8 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
     private var holdTimer: DispatchSourceTimer?
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    /// Whether any window is still one this feature maximized, so dragging it could restore it.
+    private let hasMaximizedWindows: () -> Bool
     private let interceptionTransactionStore = InterceptionTransactionStore()
     private let deferredReplayStore = DeferredReplayStore()
     private lazy var windowMutationMonitor = WindowMutationMonitor(diagnostics: diagnostics) { [weak self] event in
@@ -34,17 +36,19 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
         diagnostics: DebugDiagnostics
     ) {
         self.diagnostics = diagnostics
+        let resolver = BoundedContextResolver(base: accessibilityService)
         self.controller = GreenButtonInterceptionController(
-            contextResolver: accessibilityService,
+            contextResolver: resolver,
             diagnostics: diagnostics
         )
         self.titleBarController = TitleBarInterceptionController(
-            contextResolver: accessibilityService,
+            contextResolver: resolver,
             managedStateChecker: maximizeStrategy,
             diagnostics: diagnostics
         )
         self.actionPerformer = actionEngine
         self.dragRestorePerformer = maximizeStrategy
+        self.hasMaximizedWindows = { maximizeStrategy.hasMaximizedWindows }
         self.configuration = InterceptionConfiguration(
             selectedAction: .maximize,
             diagnosticsEnabled: false
@@ -220,16 +224,20 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
         if shouldBypassInterception(for: event.location) {
             return Unmanaged.passUnretained(event)
         }
-        // Most clicks are nowhere near a title bar; never make them wait on the app.
-        guard WindowControlZone.mayContainWindowControls(at: event.location,
-                                                         windows: WindowControlZone.onScreenWindows()) else {
+        // Asking the app about a click holds the click until it answers, so only ask
+        // when the answer could matter: near the window buttons, on a title-bar
+        // double-click, or to drag a maximized window back to its old size.
+        let region = WindowControlZone.region(at: event.location, windows: WindowControlZone.onScreenWindows(),
+                                              displays: WindowControlZone.displayBounds())
+        let clickCount = event.getIntegerValueField(.mouseEventClickState)
+        guard let region, region == .windowButtons || clickCount >= 2 || hasMaximizedWindows() else {
             controller.reset()
             titleBarController.reset()
             return Unmanaged.passUnretained(event)
         }
 
         let timestamp = ProcessInfo.processInfo.systemUptime
-        let greenButtonDecision = controller.handleMouseDown(
+        let greenButtonDecision = region != .windowButtons ? .passThrough : controller.handleMouseDown(
             location: event.location,
             timestamp: timestamp,
             optionPressed: event.flags.contains(.maskAlternate),
@@ -262,7 +270,7 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
 
         let titleBarDecision = titleBarController.handleMouseDown(
             location: event.location,
-            clickCount: event.getIntegerValueField(.mouseEventClickState),
+            clickCount: clickCount,
             configuration: configuration
         )
 

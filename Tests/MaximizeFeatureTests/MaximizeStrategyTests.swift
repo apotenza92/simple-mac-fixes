@@ -58,10 +58,38 @@ final class MaximizeStrategyTests: XCTestCase {
             )
         ]
 
-        let laptopWindowFrame = CGRect(x: 1120, y: 120, width: 1100, height: 720)
+        let laptopWindowFrame = CGRect(x: 1120, y: -862, width: 1100, height: 720)
         XCTAssertEqual(
             MaximizeStrategy.targetRect(for: laptopWindowFrame, screens: screens),
             ScreenHelpers.accessibilityRect(forVisibleFrame: screens[1].visibleFrame, in: screens)
+        )
+    }
+
+    func testTargetRectStaysOnLaptopWhenTheOtherDisplayIsAbove() {
+        // The laptop is the main display; a wider display sits above it, sticking out to the left.
+        let screens = [
+            ScreenDescriptor(
+                identifier: "laptop",
+                frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
+                visibleFrame: CGRect(x: 0, y: 72, width: 1512, height: 877)
+            ),
+            ScreenDescriptor(
+                identifier: "above",
+                frame: CGRect(x: -192, y: 982, width: 1920, height: 1080),
+                visibleFrame: CGRect(x: -192, y: 982, width: 1920, height: 1080)
+            )
+        ]
+
+        let laptopWindow = CGRect(x: 468, y: 134, width: 1025, height: 742)
+        XCTAssertEqual(
+            MaximizeStrategy.targetRect(for: laptopWindow, screens: screens),
+            CGRect(x: 0, y: 33, width: 1512, height: 877)
+        )
+
+        let upperWindow = CGRect(x: 100, y: -900, width: 1000, height: 700)
+        XCTAssertEqual(
+            MaximizeStrategy.targetRect(for: upperWindow, screens: screens),
+            CGRect(x: -192, y: -1080, width: 1920, height: 1080)
         )
     }
 
@@ -122,11 +150,11 @@ final class MaximizeStrategyTests: XCTestCase {
 
         XCTAssertEqual(
             ScreenHelpers.accessibilityRect(forVisibleFrame: screens[0].visibleFrame, in: screens),
-            CGRect(x: 0, y: 168, width: 1512, height: 949)
+            CGRect(x: 0, y: 33, width: 1512, height: 949)
         )
         XCTAssertEqual(
             ScreenHelpers.accessibilityRect(forVisibleFrame: screens[1].visibleFrame, in: screens),
-            CGRect(x: 1512, y: 25, width: 1728, height: 1060)
+            CGRect(x: 1512, y: -110, width: 1728, height: 1060)
         )
     }
 
@@ -229,16 +257,16 @@ final class MaximizeStrategyTests: XCTestCase {
         ]
         let storedState = StoredWindowFrameState(
             restoreFrame: CGRect(x: 4000, y: 300, width: 900, height: 700),
-            lastManagedMaximizeFrame: CGRect(x: 1440, y: 25, width: 1728, height: 1060)
+            lastManagedMaximizeFrame: CGRect(x: 1440, y: -192, width: 1728, height: 1060)
         )
 
         let resolution = MaximizeStrategy.resolvedRestoreFrame(
-            currentFrame: CGRect(x: 1440, y: 25, width: 1728, height: 1060),
+            currentFrame: CGRect(x: 1440, y: -192, width: 1728, height: 1060),
             storedState: storedState,
             screens: screens
         )
 
-        XCTAssertEqual(resolution?.frame, CGRect(x: 2268, y: 300, width: 900, height: 700))
+        XCTAssertEqual(resolution?.frame, CGRect(x: 2268, y: 168, width: 900, height: 700))
         XCTAssertEqual(resolution?.wasClamped, true)
     }
 
@@ -256,7 +284,7 @@ final class MaximizeStrategyTests: XCTestCase {
             )
         ]
         let storedState = StoredWindowFrameState(
-            restoreFrame: CGRect(x: 1100, y: 120, width: 1200, height: 700),
+            restoreFrame: CGRect(x: 1100, y: -900, width: 1200, height: 700),
             lastManagedMaximizeFrame: ScreenHelpers.accessibilityRect(forVisibleFrame: screens[0].visibleFrame, in: screens)
         )
 
