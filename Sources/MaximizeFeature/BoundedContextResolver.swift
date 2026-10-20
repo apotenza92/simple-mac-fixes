@@ -26,8 +26,8 @@ final class BoundedContextResolver: GreenButtonContextResolving, TitleBarContext
         bounded { [base] in base.resolveGreenButtonClick(at: location) }
     }
 
-    func resolveTitleBarInteraction(at location: CGPoint) -> TitleBarInteractionContext? {
-        bounded { [base] in base.resolveTitleBarInteraction(at: location) }
+    func resolveTitleBarInteraction(at location: CGPoint, isDoubleClick: Bool) -> TitleBarInteractionContext? {
+        bounded { [base] in base.resolveTitleBarInteraction(at: location, isDoubleClick: isDoubleClick) }
     }
 
     private func bounded<T>(_ work: @escaping () -> T?) -> T? {

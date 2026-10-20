@@ -49,7 +49,7 @@ final class BoundedContextResolverTests: XCTestCase {
             Thread.sleep(forTimeInterval: delay)
             return nil
         }
-        func resolveTitleBarInteraction(at location: CGPoint) -> TitleBarInteractionContext? {
+        func resolveTitleBarInteraction(at location: CGPoint, isDoubleClick: Bool) -> TitleBarInteractionContext? {
             Thread.sleep(forTimeInterval: delay)
             return nil
         }
@@ -62,7 +62,7 @@ final class BoundedContextResolverTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 0.5)
         // Still busy with the first question: the next click doesn't wait at all.
         let next = Date()
-        XCTAssertNil(resolver.resolveTitleBarInteraction(at: .zero))
+        XCTAssertNil(resolver.resolveTitleBarInteraction(at: .zero, isDoubleClick: true))
         XCTAssertLessThan(Date().timeIntervalSince(next), 0.05)
     }
 }

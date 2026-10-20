@@ -263,7 +263,7 @@ final class TitleBarInterceptionControllerTests: XCTestCase {
 private final class TitleBarResolverSpy: TitleBarContextResolving {
     var context: TitleBarInteractionContext?
 
-    func resolveTitleBarInteraction(at location: CGPoint) -> TitleBarInteractionContext? {
+    func resolveTitleBarInteraction(at location: CGPoint, isDoubleClick: Bool) -> TitleBarInteractionContext? {
         context
     }
 }

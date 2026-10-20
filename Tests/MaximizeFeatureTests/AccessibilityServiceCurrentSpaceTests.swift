@@ -413,6 +413,45 @@ final class AccessibilityServiceCurrentSpaceTests: XCTestCase {
         )
     }
 
+    private struct FakeNode {
+        let role: String
+        let frame: CGRect?
+        var children: [FakeNode] = []
+    }
+
+    private static func containsInteractiveElement(at point: CGPoint, in root: FakeNode) -> Bool {
+        AccessibilityService.containsInteractiveElement(
+            at: point,
+            root: root,
+            children: \.children,
+            frame: \.frame,
+            role: { $0.role },
+            actions: { _ in [] }
+        )
+    }
+
+    /// Chromium tab strips: the hit test returns a group layered over the tab, while
+    /// the tab and its close button sit in a sibling branch.
+    private static let chromiumWindow = FakeNode(role: kAXWindowRole as String, frame: CGRect(x: 0, y: 0, width: 800, height: 600), children: [
+        FakeNode(role: kAXGroupRole as String, frame: CGRect(x: 0, y: 0, width: 800, height: 40), children: [
+            FakeNode(role: kAXGroupRole as String, frame: CGRect(x: 0, y: 0, width: 800, height: 40)),
+            FakeNode(role: "AXTabGroup", frame: CGRect(x: 80, y: 0, width: 600, height: 40), children: [
+                FakeNode(role: kAXRadioButtonRole as String, frame: CGRect(x: 80, y: 0, width: 240, height: 40), children: [
+                    FakeNode(role: kAXButtonRole as String, frame: CGRect(x: 290, y: 6, width: 28, height: 28))
+                ])
+            ])
+        ])
+    ])
+
+    func testInteractiveElementSearchFindsTabUnderOverlayGroup() {
+        XCTAssertTrue(Self.containsInteractiveElement(at: CGPoint(x: 150, y: 20), in: Self.chromiumWindow))
+    }
+
+    func testInteractiveElementSearchAllowsEmptyTabStrip() {
+        XCTAssertFalse(Self.containsInteractiveElement(at: CGPoint(x: 720, y: 20), in: Self.chromiumWindow))
+        XCTAssertFalse(Self.containsInteractiveElement(at: CGPoint(x: 500, y: 20), in: Self.chromiumWindow))
+    }
+
     func testInteractiveTitleBarElementAllowsPassiveGroups() {
         XCTAssertFalse(
             AccessibilityService.isInteractiveTitleBarElement(

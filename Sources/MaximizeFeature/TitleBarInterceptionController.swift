@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 protocol TitleBarContextResolving {
-    func resolveTitleBarInteraction(at location: CGPoint) -> TitleBarInteractionContext?
+    func resolveTitleBarInteraction(at location: CGPoint, isDoubleClick: Bool) -> TitleBarInteractionContext?
 }
 
 protocol ManagedMaximizedStateChecking {
@@ -52,7 +52,7 @@ final class TitleBarInterceptionController {
         clickCount: Int64,
         configuration: InterceptionConfiguration
     ) -> TitleBarInterceptionDecision {
-        guard let context = contextResolver.resolveTitleBarInteraction(at: location) else {
+        guard let context = contextResolver.resolveTitleBarInteraction(at: location, isDoubleClick: clickCount >= 2) else {
             pendingDrag = nil
             return .passThrough
         }

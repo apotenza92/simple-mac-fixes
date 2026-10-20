@@ -117,12 +117,12 @@ final class AccessibilityService: @unchecked Sendable {
         return nil
     }
 
-    func resolveTitleBarInteraction(at location: CGPoint) -> TitleBarInteractionContext? {
+    func resolveTitleBarInteraction(at location: CGPoint, isDoubleClick: Bool) -> TitleBarInteractionContext? {
         if isLikelyInMenuBar(location) {
             return nil
         }
 
-        switch resolveTitleBarInteractionUsingHitTest(at: location) {
+        switch resolveTitleBarInteractionUsingHitTest(at: location, isDoubleClick: isDoubleClick) {
         case .resolved(let context):
             return context
         case .blocked:
@@ -149,7 +149,8 @@ final class AccessibilityService: @unchecked Sendable {
                     windowFrame: windowFrame,
                     draggableRect: interactionRects.draggableRect,
                     hasReliableFallbackEvidence: true
-                  ) else {
+                  ),
+                  !(isDoubleClick && hasInteractiveElement(at: location, in: window)) else {
                 continue
             }
             guard let context = windowContext(
@@ -540,7 +541,7 @@ final class AccessibilityService: @unchecked Sendable {
         return nil
     }
 
-    private func resolveTitleBarInteractionUsingHitTest(at location: CGPoint) -> TitleBarHitTestResolution {
+    private func resolveTitleBarInteractionUsingHitTest(at location: CGPoint, isDoubleClick: Bool) -> TitleBarHitTestResolution {
         let systemWideElement = AXUIElementCreateSystemWide()
         let candidatePoints = candidateHitTestPoints(for: location)
 
@@ -567,7 +568,8 @@ final class AccessibilityService: @unchecked Sendable {
             if shouldIgnoreTitleBarHitElement(
                 hitElement,
                 window: windowElement,
-                windowFrame: windowFrame
+                location: location,
+                isDoubleClick: isDoubleClick
             ) {
                 return .blocked
             }
@@ -978,9 +980,9 @@ final class AccessibilityService: @unchecked Sendable {
     private func shouldIgnoreTitleBarHitElement(
         _ element: AXUIElement,
         window: AXUIElement,
-        windowFrame: CGRect
+        location: CGPoint,
+        isDoubleClick: Bool
     ) -> Bool {
-        _ = windowFrame
         let ancestors = titleBarHitAncestors(from: element, to: window)
 
         if Self.isLikelyTabStripTab(roles: ancestors.map(\.role), frames: ancestors.map(\.frame)) {
@@ -990,6 +992,58 @@ final class AccessibilityService: @unchecked Sendable {
         for ancestor in ancestors {
             if Self.isInteractiveTitleBarElement(role: ancestor.role, actions: ancestor.actions) {
                 return true
+            }
+        }
+
+        // Chromium answers with a plain group drawn over its tabs and title-bar buttons,
+        // so on a group a double-click also looks down from the window for a control
+        // under the point. Native toolbars are left alone: where they answer with the
+        // toolbar or the window inside a button's frame, a real click is a title-bar
+        // click too. The search can take tens of milliseconds, so single clicks skip it.
+        guard isDoubleClick, ancestors.first?.role == kAXGroupRole as String else {
+            return false
+        }
+        return hasInteractiveElement(at: location, in: window)
+    }
+
+    private func hasInteractiveElement(at location: CGPoint, in window: AXUIElement) -> Bool {
+        Self.containsInteractiveElement(
+            at: location,
+            root: window,
+            children: { AXHelpers.children(of: $0) },
+            frame: { AXHelpers.cgRect(of: $0) },
+            role: { AXHelpers.stringAttribute(kAXRoleAttribute as String, on: $0) },
+            actions: { AXHelpers.actions(for: $0) }
+        )
+    }
+
+    static func containsInteractiveElement<Node>(
+        at point: CGPoint,
+        root: Node,
+        children: (Node) -> [Node],
+        frame: (Node) -> CGRect?,
+        role: (Node) -> String?,
+        actions: (Node) -> [String],
+        maxDepth: Int = 12,
+        maxVisitedNodes: Int = 300
+    ) -> Bool {
+        var queue: [(node: Node, depth: Int)] = [(root, 0)]
+        var visited = 0
+
+        while !queue.isEmpty, visited < maxVisitedNodes {
+            let current = queue.removeFirst()
+            guard current.depth < maxDepth else {
+                continue
+            }
+            for child in children(current.node) {
+                visited += 1
+                guard let childFrame = frame(child), childFrame.contains(point) else {
+                    continue
+                }
+                if isInteractiveTitleBarElement(role: role(child), actions: actions(child)) {
+                    return true
+                }
+                queue.append((child, current.depth + 1))
             }
         }
 
