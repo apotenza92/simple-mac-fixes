@@ -22,7 +22,12 @@ public final class DisplayConnectionController: ObservableObject {
     public var onTopologyChange: (() -> Void)?
     public var showsCheckboxes: Bool { displays.filter(\.physical).count > 1 }
     private var timer: Timer?
+    /// Each poll walks the hardware registry. Screen changes refresh straight away, so
+    /// polling only needs to be quick while a switched-off display awaits recovery.
+    private static let idlePollInterval: TimeInterval = 10
+    private static let recoveryPollInterval: TimeInterval = 1
     private var names: [String: String] = [:]
+    private var wroteDisplays = false
     private var running = false
     private lazy var worker = DisplayConnectionWorker { [weak self] screens, disabled, error, completed in
         DispatchQueue.main.async { self?.receive(screens, disabled: disabled, error: error, completed: completed) }
@@ -34,7 +39,13 @@ public final class DisplayConnectionController: ObservableObject {
         guard !running else { return }
         running = true
         refresh()
-        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+        schedulePolling(every: Self.idlePollInterval)
+    }
+
+    private func schedulePolling(every interval: TimeInterval) {
+        guard running, timer?.timeInterval != interval else { return }
+        timer?.invalidate()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
         self.timer = timer
@@ -92,11 +103,16 @@ public final class DisplayConnectionController: ObservableObject {
             (order.firstIndex(of: $0.key) ?? Int.max, $0.id) < (order.firstIndex(of: $1.key) ?? Int.max, $1.id)
         }
         let topologyChanged = displays.map { "\($0.id):\($0.isEnabled)" } != next.map { "\($0.id):\($0.isEnabled)" }
-        if displays != next { displays = next }
+        let changed = displays != next
+        if changed { displays = next }
         isChanging = false
         if let error { errorMessage = error }
-        UserDefaults.standard.set(next.map { ["id": $0.id, "key": $0.key, "name": $0.name,
-            "enabled": $0.isEnabled, "canToggle": $0.canToggle] as [String: Any] }, forKey: "runtimeDisplayConnections")
+        if changed || !wroteDisplays {
+            wroteDisplays = true
+            UserDefaults.standard.set(next.map { ["id": $0.id, "key": $0.key, "name": $0.name,
+                "enabled": $0.isEnabled, "canToggle": $0.canToggle] as [String: Any] }, forKey: "runtimeDisplayConnections")
+        }
+        schedulePolling(every: disabled.isEmpty ? Self.idlePollInterval : Self.recoveryPollInterval)
         if topologyChanged { onTopologyChange?() }
     }
 }

@@ -245,8 +245,8 @@ final class AppModel: ObservableObject {
         if hasAccessibilityPermission, !keyTap.isRunning {
             _ = keyTap.start()
         }
-        diagnosticsDefaults.set(hasAccessibilityPermission, forKey: "runtimeAccessibilityTrusted")
-        diagnosticsDefaults.set(keyTap.isRunning, forKey: "runtimeEventTapRunning")
+        diagnosticsDefaults.setIfChanged(hasAccessibilityPermission, forKey: "runtimeAccessibilityTrusted")
+        diagnosticsDefaults.setIfChanged(keyTap.isRunning, forKey: "runtimeEventTapRunning")
     }
 
     private func updateBrightnessListener() {
@@ -255,13 +255,13 @@ final class AppModel: ObservableObject {
         let needsRawKeys = brightness.isEnabled
             && brightness.isAvailable
             && !brightness.hasActiveBuiltInDisplay
-        diagnosticsDefaults.set(hasInputMonitoringPermission, forKey: "runtimeInputMonitoringGranted")
+        diagnosticsDefaults.setIfChanged(hasInputMonitoringPermission, forKey: "runtimeInputMonitoringGranted")
         if needsRawKeys, hasInputMonitoringPermission {
             brightnessListener.start()
         } else {
             brightnessListener.stop()
         }
-        diagnosticsDefaults.set(brightnessListener.isRunning, forKey: "runtimeBrightnessHIDRunning")
+        diagnosticsDefaults.setIfChanged(brightnessListener.isRunning, forKey: "runtimeBrightnessHIDRunning")
     }
 
     private func handle(_ key: MediaKey, fine: Bool) {
@@ -305,5 +305,13 @@ final class AppModel: ObservableObject {
             guard let display = brightness.displays.first(where: { $0.id == displayID }) else { continue }
             osd.show(kind: .brightness, name: display.name, percent: display.percent, displayID: displayID)
         }
+    }
+}
+
+private extension UserDefaults {
+    /// The permission checks run every two seconds; most of the time nothing has changed.
+    func setIfChanged(_ value: Bool, forKey key: String) {
+        guard object(forKey: key) as? Bool != value else { return }
+        set(value, forKey: key)
     }
 }

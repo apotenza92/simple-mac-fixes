@@ -24,14 +24,15 @@ public final class FinderCutFeature {
 
     /// Returns false to drop the key press.
     private func process(_ event: CGEvent) -> Bool {
+        // Every key press on the Mac comes through here; ordinary typing leaves at once.
         let modifiers = event.flags.intersection([.maskCommand, .maskShift, .maskControl, .maskAlternate])
+        guard modifiers == .maskCommand else { return true }
         let shortcut = FinderCutTracker.shortcut(
             characters: NSEvent(cgEvent: event)?.charactersIgnoringModifiers,
-            commandOnly: modifiers == .maskCommand
+            commandOnly: true
         )
-        let target = Self.targetApplication(of: event)
         guard shortcut != .other,
-              let finder = target,
+              let finder = Self.targetApplication(of: event),
               finder.bundleIdentifier == Self.finderBundleIdentifier
         else { return true }
         let decision = tracker.handle(

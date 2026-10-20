@@ -28,7 +28,7 @@ while running() and time.monotonic() < deadline:
 if running():
     raise SystemExit('Development app or display recovery is still running; installation was not changed.')
 PY
-# Quit Macsimize, Dockmint, Keyboard Control, LinearMouse and the like so they
+# Quit the release build, Macsimize, Dockmint, Keyboard Control, LinearMouse and the like so they
 # don't act on the same clicks and keys; reopen them when the dev app quits.
 "${repo_dir}/scripts/dev-other-apps.py" quit
 mkdir -p "${install_dir}"

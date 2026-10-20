@@ -37,7 +37,13 @@ public final class DockPreviewsFeature {
     private var bubbleSnapshot: (image: CGImage, rect: CGRect)?
     private var measureTask: Task<Void, Never>?
     private let thumbnails = WindowThumbnails()
+    /// No preview while Mission Control or App Exposé is open: the Dock's icons are its own then.
+    private let missionControl = MissionControlWatch()
+    /// Looks for Mission Control opening while the preview shows; newer macOS doesn't announce it.
+    private var missionControlCheck: Timer?
     private let lookupQueue = DispatchQueue(label: "com.apotenza.SimpleMacFixes.dockPreviews", qos: .userInteractive)
+    /// Only used on `lookupQueue`.
+    private let recentWindows = RecentWindows()
     /// Window buttons and bringing windows forward wait on the app and on resizing, so
     /// they run apart from the lookups that follow the pointer.
     private let actionQueue = DispatchQueue(label: "com.apotenza.SimpleMacFixes.dockPreviews.actions", qos: .userInitiated)
@@ -85,6 +91,8 @@ public final class DockPreviewsFeature {
         CGEvent.tapEnable(tap: port, enable: true)
         self.port = port
         self.source = source
+        missionControl.opened = { [weak self] in self?.hide() }
+        missionControl.start()
         spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -107,6 +115,7 @@ public final class DockPreviewsFeature {
         if let port { CGEvent.tapEnable(tap: port, enable: false); CFMachPortInvalidate(port) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
         if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
+        missionControl.stop()
         port = nil
         source = nil
         spaceObserver = nil
@@ -141,8 +150,8 @@ public final class DockPreviewsFeature {
 
     private func refreshShown() {
         guard let bundleIdentifier = shownBundle, let icon = shownIcon else { return }
-        lookupQueue.async { [weak self] in
-            let windows = DockWindows.windows(bundleIdentifier: bundleIdentifier)
+        lookupQueue.async { [weak self, recentWindows] in
+            let windows = recentWindows.windows(of: bundleIdentifier, maxAge: 0)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.shownBundle == bundleIdentifier else { return }
@@ -190,6 +199,11 @@ public final class DockPreviewsFeature {
         let now = ProcessInfo.processInfo.systemUptime
         motion.append((point, now))
         motion.removeAll { now - $0.time > Self.headingWindow }
+        if missionControl.isOpen {
+            latestPoint = nil
+            if panel.isVisible { hide() }
+            return
+        }
         updateNameBubble(for: point)
         if panel.isVisible, panelFrame.insetBy(dx: -4, dy: -4).contains(point)
             || topLeft(nameBubble.frame).insetBy(dx: -4, dy: -4).contains(point) {
@@ -210,13 +224,18 @@ public final class DockPreviewsFeature {
     private func lookUp() {
         guard !lookupInFlight, let point = latestPoint else { return }
         lookupInFlight = true
-        lookupQueue.async { [weak self] in
-            let icon = DockHitTest.appIcon(at: point)
-            let windows = icon.map { DockWindows.windows(bundleIdentifier: $0.bundleIdentifier) } ?? []
+        lookupQueue.async { [weak self, recentWindows] in
+            let missionControlOpen = MissionControlWatch.windowManagerIsShowing()
+            let icon = missionControlOpen ? nil : DockHitTest.appIcon(at: point)
+            let windows = icon.map { recentWindows.windows(of: $0.bundleIdentifier) } ?? []
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.lookupInFlight = false
+                    if missionControlOpen {
+                        self.hide()
+                        return
+                    }
                     self.found(icon, windows, at: point)
                     if let latest = self.latestPoint, hypot(latest.x - point.x, latest.y - point.y) > 2 { self.lookUp() }
                 }
@@ -255,6 +274,8 @@ public final class DockPreviewsFeature {
     }
 
     private func present(_ icon: (bundleIdentifier: String, frame: CGRect), _ windows: [DockWindow]) {
+        // A lookup that set off before Mission Control opened.
+        guard !missionControl.isOpen else { return hide() }
         let app = NSRunningApplication.runningApplications(withBundleIdentifier: icon.bundleIdentifier).first
         let model = panel.model
         let sameVisit = shownBundle == icon.bundleIdentifier && panel.isVisible
@@ -287,6 +308,7 @@ public final class DockPreviewsFeature {
         measureNativeBubble(name: shownName, icon: icon.frame, edge: edge)
         if let point = latestPoint { updateNameBubble(for: point) }
         DockAutoHideHold.hold()
+        watchForMissionControl()
         pictureTask?.cancel()
         pictureTask = Task { [weak self, thumbnails] in
             for window in windows {
@@ -526,9 +548,9 @@ public final class DockPreviewsFeature {
                 return
             }
             // The pointer stopped short of the preview: let the icon under it decide.
-            self.lookupQueue.async { [weak self] in
-                let icon = DockHitTest.appIcon(at: point)
-                let windows = icon.map { DockWindows.windows(bundleIdentifier: $0.bundleIdentifier) } ?? []
+            self.lookupQueue.async { [weak self, recentWindows = self.recentWindows] in
+                let icon = MissionControlWatch.windowManagerIsShowing() ? nil : DockHitTest.appIcon(at: point)
+                let windows = icon.map { recentWindows.windows(of: $0.bundleIdentifier) } ?? []
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         guard let self, self.latestPoint == point else { return }
@@ -576,9 +598,26 @@ public final class DockPreviewsFeature {
         measureTask?.cancel()
         measuredBubble = nil
         bubbleSnapshot = nil
+        missionControlCheck?.invalidate()
+        missionControlCheck = nil
         if panel.isVisible { panel.orderOut(nil) }
         if nameBubble.isVisible { nameBubble.orderOut(nil) }
         DockAutoHideHold.release()
+    }
+
+    private func watchForMissionControl() {
+        guard missionControlCheck == nil else { return }
+        missionControlCheck = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.lookupQueue.async { [weak self] in
+                    guard MissionControlWatch.windowManagerIsShowing() else { return }
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated { self?.hide() }
+                    }
+                }
+            }
+        }
     }
 
     /// The panel's frame in the top-left coordinates of mouse events.
@@ -757,5 +796,20 @@ public final class DockPreviewsFeature {
             while !Self.isFrontWindow(window.id), Date() < deadline { usleep(4_000) }
             DispatchQueue.main.async { done() }
         }
+    }
+}
+
+/// The last app's window list. Listing windows reads every window on the Mac, so
+/// the stream of lookups while the pointer moves over one icon shares a recent list.
+private final class RecentWindows: @unchecked Sendable {
+    private static let maxAge: TimeInterval = 0.5
+    private var last: (bundleIdentifier: String, windows: [DockWindow], at: TimeInterval)?
+
+    func windows(of bundleIdentifier: String, maxAge: TimeInterval = RecentWindows.maxAge) -> [DockWindow] {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let last, last.bundleIdentifier == bundleIdentifier, now - last.at < maxAge { return last.windows }
+        let windows = DockWindows.windows(bundleIdentifier: bundleIdentifier)
+        last = (bundleIdentifier, windows, now)
+        return windows
     }
 }

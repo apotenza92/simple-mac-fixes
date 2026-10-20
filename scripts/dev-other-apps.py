@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Quit apps that overlap with Simple Mac Fixes while the dev build runs, then reopen them.
+"""Quit apps that overlap with Simple Mac Fixes, and its release build, while the dev build runs, then reopen them.
 
   quit   quit the running overlapping apps and remember them
   watch  wait in the background until the dev app exits, then reopen them
@@ -30,9 +30,15 @@ JSON.stringify($.NSWorkspace.sharedWorkspace.runningApplications.js
     return json.loads(output)
 
 
+# The installed release build acts on the same keys, clicks and Dock settings.
+RELEASE_BUNDLE_IDENTIFIER = 'com.apotenza.simplemacfixes'
+
+
 def overlaps(bundle_identifier):
     # Matches beta and dev variants too, like ConflictingApp.conflicts.
     bundle_identifier = bundle_identifier.lower()
+    if bundle_identifier == RELEASE_BUNDLE_IDENTIFIER:
+        return True
     return any(bundle_identifier == k or bundle_identifier.startswith(k + '.') for k in known_bundle_identifiers())
 
 

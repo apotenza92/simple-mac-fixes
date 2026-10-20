@@ -14,22 +14,22 @@ struct DockHitTestStableMetadataCache {
         return cachedDisplayBounds?.first { $0.contains(point) }
     }
 
-    mutating func dockProcessIdentifier(load: () -> pid_t?) -> pid_t? {
-        if !didResolveDockProcessIdentifier {
-            cachedDockProcessIdentifier = load()
-            didResolveDockProcessIdentifier = true
-        }
-        return cachedDockProcessIdentifier
+    /// The Dock's pid once resolved; the outer optional is nil until then.
+    var dockProcessIdentifier: pid_t?? {
+        didResolveDockProcessIdentifier ? .some(cachedDockProcessIdentifier) : nil
     }
 
-    mutating func bundleIdentifier(for url: URL,
-                                   load: () -> String?) -> String? {
-        if let cached = bundleIdentifiersByURL[url] {
-            return cached
-        }
-        guard let resolved = load() else { return nil }
-        bundleIdentifiersByURL[url] = resolved
-        return resolved
+    mutating func storeDockProcessIdentifier(_ pid: pid_t?) {
+        cachedDockProcessIdentifier = pid
+        didResolveDockProcessIdentifier = true
+    }
+
+    func bundleIdentifier(for url: URL) -> String? {
+        bundleIdentifiersByURL[url]
+    }
+
+    mutating func storeBundleIdentifier(_ bundleIdentifier: String, for url: URL) {
+        bundleIdentifiersByURL[url] = bundleIdentifier
     }
 
     mutating func invalidateDisplayBounds() {
@@ -342,13 +342,14 @@ enum DockHitTest {
             Logger.debug("AXUIElementGetPid failed with \(result.rawValue)")
             return false
         }
-        stableMetadataLock.lock()
-        let dockPID = stableMetadataCache.dockProcessIdentifier {
-            NSWorkspace.shared.runningApplications.first {
-                $0.bundleIdentifier == "com.apple.dock"
-            }?.processIdentifier
+        // Resolved outside the lock, which the main thread's Dock strip check also takes.
+        let dockPID: pid_t?
+        if let cached = stableMetadataLock.withLock({ stableMetadataCache.dockProcessIdentifier }) {
+            dockPID = cached
+        } else {
+            dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
+            stableMetadataLock.withLock { stableMetadataCache.storeDockProcessIdentifier(dockPID) }
         }
-        stableMetadataLock.unlock()
         if pid == dockPID { return true }
         // The Dock relaunches with a new pid whenever it restarts (Instant Dock
         // does this), and macOS doesn't announce that for background processes.
@@ -386,11 +387,12 @@ enum DockHitTest {
 
     private static func bundleIdentifier(forApplicationURL url: URL?) -> String? {
         guard let url else { return nil }
-        stableMetadataLock.lock()
-        let bundleIdentifier = stableMetadataCache.bundleIdentifier(for: url) {
-            Bundle(url: url)?.bundleIdentifier
+        // Reading a bundle touches the disk, so not while holding the lock.
+        var bundleIdentifier = stableMetadataLock.withLock { stableMetadataCache.bundleIdentifier(for: url) }
+        if bundleIdentifier == nil, let loaded = Bundle(url: url)?.bundleIdentifier {
+            bundleIdentifier = loaded
+            stableMetadataLock.withLock { stableMetadataCache.storeBundleIdentifier(loaded, for: url) }
         }
-        stableMetadataLock.unlock()
         guard let bundleIdentifier else {
             Logger.debug("No bundleIdentifier resolved from AXURL: \(url.path)")
             return nil
