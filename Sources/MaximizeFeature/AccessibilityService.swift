@@ -995,6 +995,14 @@ final class AccessibilityService: @unchecked Sendable {
             }
         }
 
+        // Apps that draw their title bar in a web page (Teams, Electron apps) answer from
+        // the window's own views where the page lets the window be dragged, and from
+        // inside the page over its content, such as a search field and its icon. Their
+        // containers all claim to be pressable, so the page itself is the signal.
+        if Self.isInsideWebContent(roles: hitRolesUpToWindow(from: element, window: window)) {
+            return true
+        }
+
         // Chromium answers with a plain group drawn over its tabs and title-bar buttons,
         // so on a group a double-click also looks down from the window for a control
         // under the point. Native toolbars are left alone: where they answer with the
@@ -1072,6 +1080,24 @@ final class AccessibilityService: @unchecked Sendable {
         }
 
         return ancestors
+    }
+
+    /// Roles only, but far enough up to clear a web page: Teams puts its search field
+    /// about 20 levels below the window.
+    private func hitRolesUpToWindow(from element: AXUIElement, window: AXUIElement) -> [String?] {
+        var roles: [String?] = []
+        var current: AXUIElement? = element
+
+        while let candidate = current, roles.count < 48, !AXHelpers.elementsEqual(candidate, window) {
+            roles.append(AXHelpers.stringAttribute(kAXRoleAttribute as String, on: candidate))
+            current = AXHelpers.parent(of: candidate)
+        }
+
+        return roles
+    }
+
+    static func isInsideWebContent(roles: [String?]) -> Bool {
+        roles.contains("AXWebArea")
     }
 
     static func isLikelyTitleBarSupplementaryFrame(

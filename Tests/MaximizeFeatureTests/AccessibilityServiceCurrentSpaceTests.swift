@@ -452,6 +452,19 @@ final class AccessibilityServiceCurrentSpaceTests: XCTestCase {
         XCTAssertFalse(Self.containsInteractiveElement(at: CGPoint(x: 500, y: 20), in: Self.chromiumWindow))
     }
 
+    /// Recorded from Teams: the search icon answers from inside the page, with no control
+    /// among its first ten ancestors, while empty title-bar space answers from the
+    /// window's own views.
+    func testWebContentIsNotTitleBar() {
+        let group = kAXGroupRole as String
+        let searchIcon: [String?] = [group, group, group, group, group, group, group, "AXWebArea", kAXScrollAreaRole as String]
+            + Array(repeating: group, count: 8) + [kAXUnknownRole as String]
+        let emptyTitleBar: [String?] = [group, group, group, kAXUnknownRole as String]
+
+        XCTAssertTrue(AccessibilityService.isInsideWebContent(roles: searchIcon))
+        XCTAssertFalse(AccessibilityService.isInsideWebContent(roles: emptyTitleBar))
+    }
+
     func testInteractiveTitleBarElementAllowsPassiveGroups() {
         XCTAssertFalse(
             AccessibilityService.isInteractiveTitleBarElement(
