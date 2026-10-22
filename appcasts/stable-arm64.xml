@@ -3,13 +3,13 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.0.8</title>
-      <sparkle:version>890000</sparkle:version>
-      <sparkle:shortVersionString>0.0.8</sparkle:shortVersionString>
+      <title>v0.1.0</title>
+      <sparkle:version>100090000</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- Double-clicking a button, tab or text box at the top of a window no longer makes the window fill the screen. This mostly happened in Brave, Chrome and similar apps. Double-clicking an empty part of the bar still fills the screen as before.
+      <description sparkle:format="plain-text">- The green button now fills the screen in Butter Paper, Zed and other apps that draw over their own title bar. Before, clicking it did nothing extra there.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.0.8/Simple-Mac-Fixes-v0.0.8-macos-arm64.zip" length="3643373" type="application/octet-stream" sparkle:edSignature="M5KrcBTLHF8owUuE5eqVfzJSApBv3+mM7b/JitT3F+FGK48IZ+mJ6a2W21LNRrROoP7tUd/3vN7LqeeopFA2BQ==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.0/Simple-Mac-Fixes-v0.1.0-macos-arm64.zip" length="3643743" type="application/octet-stream" sparkle:edSignature="nfOdyzAfTZ7nwOvl6x+rqvx+EzmBXGEE3kODXPnKCi2heY8nSso3A+0yf8pZo6PCIY4Dg8Bfdb3tqgioq7VkBQ==" />
     </item>
   </channel>
 </rss>
