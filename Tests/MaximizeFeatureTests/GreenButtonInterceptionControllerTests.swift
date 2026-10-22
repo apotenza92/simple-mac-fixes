@@ -45,14 +45,15 @@ final class GreenButtonInterceptionControllerTests: XCTestCase {
         let windowFrame = CGRect(x: 100, y: 200, width: 900, height: 700)
         let hotZone = AccessibilityService.trafficLightHotZone(for: windowFrame)
 
-        XCTAssertTrue(hotZone.contains(CGPoint(x: 112, y: 888)))
+        XCTAssertTrue(hotZone.contains(CGPoint(x: 112, y: 212)))
+        XCTAssertFalse(hotZone.contains(CGPoint(x: 112, y: 888)))
     }
 
     func testTrafficLightHotZoneExcludesFarRightTitlebarArea() {
         let windowFrame = CGRect(x: 100, y: 200, width: 900, height: 700)
         let hotZone = AccessibilityService.trafficLightHotZone(for: windowFrame)
 
-        XCTAssertFalse(hotZone.contains(CGPoint(x: 600, y: 888)))
+        XCTAssertFalse(hotZone.contains(CGPoint(x: 600, y: 212)))
     }
 
     func testMouseDownPassesThroughWhenFullScreenSelected() {

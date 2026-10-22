@@ -324,6 +324,7 @@ final class AccessibilityService: @unchecked Sendable {
         return frame.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
     }
 
+    /// Frames and clicks are in top-left coordinates, so the buttons sit near `minY`.
     static func trafficLightHotZone(
         for windowFrame: CGRect,
         width: CGFloat = 180,
@@ -332,7 +333,7 @@ final class AccessibilityService: @unchecked Sendable {
     ) -> CGRect {
         CGRect(
             x: windowFrame.minX - inset,
-            y: windowFrame.maxY - height - inset,
+            y: windowFrame.minY - inset,
             width: width + (inset * 2),
             height: height + (inset * 2)
         )
