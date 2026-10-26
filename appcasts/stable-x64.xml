@@ -3,13 +3,14 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.1.0</title>
-      <sparkle:version>100090000</sparkle:version>
-      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <title>v0.1.1</title>
+      <sparkle:version>100190000</sparkle:version>
+      <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- The green button now fills the screen in Butter Paper, Zed and other apps that draw over their own title bar. Before, clicking it did nothing extra there.
+      <description sparkle:format="plain-text">- On the newest macOS, the volume and brightness overlay now looks like the system's own: a glass bar with sixteen steps, just below the Sound or Display icon in the menu bar. Older macOS keeps the overlay you know.
+- Each press of a volume or brightness key now moves one step of sixteen, like the system does, and holding Shift moves a quarter step.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.0/Simple-Mac-Fixes-v0.1.0-macos-x64.zip" length="3686596" type="application/octet-stream" sparkle:edSignature="CrB31Yos+2wLLS3o9U8D7tTXscdBoEZoUa2g+CIJd2qyztjADCHWQ652//J8Qt2B/OVrgznimlJI9oiuy+pdAw==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.1/Simple-Mac-Fixes-v0.1.1-macos-x64.zip" length="3703501" type="application/octet-stream" sparkle:edSignature="yT2w8U09B2nSOIxKE04n3/ta7N2G33h0CnLd9QvJAfXgYCKzuGS04Rnn/08a9BFw2pUncWqv+fCiJlEg543iBw==" />
     </item>
   </channel>
 </rss>
