@@ -16,7 +16,7 @@ enum NativeBrightness {
         return min(1, max(0, value))
     }
 
-    static func set(_ id: CGDirectDisplayID, percent: Int) -> Bool {
-        setter?(id, Float(Level.clamp(percent)) / 100) == 0
+    static func set(_ id: CGDirectDisplayID, percent: Double) -> Bool {
+        setter?(id, Float(Level.clamp(percent) / 100)) == 0
     }
 }

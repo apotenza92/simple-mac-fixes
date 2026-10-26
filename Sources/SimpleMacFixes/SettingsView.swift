@@ -161,9 +161,9 @@ struct SettingsView: View {
             : displayConnections.displays
     }
 
-    private func levelSlider(value: Int, leading: String, trailing: String,
-                             set: @escaping (Int) -> Void) -> some View {
-        Slider(value: Binding(get: { Double(value) }, set: { set(Int($0.rounded())) }), in: 0...100) {
+    private func levelSlider(value: Double, leading: String, trailing: String,
+                             set: @escaping (Double) -> Void) -> some View {
+        Slider(value: Binding(get: { value }, set: set), in: 0...100) {
             EmptyView()
         } minimumValueLabel: {
             Image(systemName: leading).foregroundStyle(.secondary)

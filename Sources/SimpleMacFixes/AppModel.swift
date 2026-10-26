@@ -31,7 +31,7 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             try? await Task.sleep(nanoseconds: 50_000_000)
             guard ProcessInfo.processInfo.systemUptime - self.lastBrightnessMediaEvent > 0.1 else { return }
-            self.brightness.nudge(isUp ? Level.defaultStep : -Level.defaultStep) { [weak self] in
+            self.brightness.nudge(up: isUp, fine: false) { [weak self] in
                 self?.showBrightnessOSD()
             }
         }
@@ -270,23 +270,22 @@ final class AppModel: ObservableObject {
             diagnosticsDefaults.integer(forKey: "runtimeMediaKeyCount") + 1,
             forKey: "runtimeMediaKeyCount"
         )
-        let step = fine ? 1 : Level.defaultStep
         switch key {
         case .volumeUp:
-            audio.nudgeVolume(step)
+            audio.stepVolume(up: true, fine: fine)
             showVolumeOSD()
         case .volumeDown:
-            audio.nudgeVolume(-step)
+            audio.stepVolume(up: false, fine: fine)
             showVolumeOSD()
         case .mute:
             audio.toggleMute()
             showVolumeOSD()
         case .brightnessUp:
             lastBrightnessMediaEvent = ProcessInfo.processInfo.systemUptime
-            brightness.nudge(step) { [weak self] in self?.showBrightnessOSD() }
+            brightness.nudge(up: true, fine: fine) { [weak self] in self?.showBrightnessOSD() }
         case .brightnessDown:
             lastBrightnessMediaEvent = ProcessInfo.processInfo.systemUptime
-            brightness.nudge(-step) { [weak self] in self?.showBrightnessOSD() }
+            brightness.nudge(up: false, fine: fine) { [weak self] in self?.showBrightnessOSD() }
         }
     }
 

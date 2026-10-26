@@ -11,12 +11,12 @@ struct SoftwareBrightnessMemory {
         return "\(vendor):\(model):\(serial)"
     }
 
-    func level(for key: String?) -> Int? {
-        guard let key, let value = defaults.dictionary(forKey: preference)?[key] as? Int else { return nil }
-        return Level.clamp(value)
+    func level(for key: String?) -> Double? {
+        guard let key, let value = defaults.dictionary(forKey: preference)?[key] as? NSNumber else { return nil }
+        return Level.clamp(value.doubleValue)
     }
 
-    func remember(_ value: Int, for key: String?) {
+    func remember(_ value: Double, for key: String?) {
         guard let key else { return }
         var levels = defaults.dictionary(forKey: preference) ?? [:]
         levels[key] = Level.clamp(value)

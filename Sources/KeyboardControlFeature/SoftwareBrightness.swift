@@ -15,7 +15,7 @@ final class SoftwareBrightness {
         }
     }
 
-    func configure(levels: [CGDirectDisplayID: Int]) {
+    func configure(levels: [CGDirectDisplayID: Double]) {
         for id in Array(panels.keys) where levels[id] == nil || eligibleScreen(id) == nil {
             panels.removeValue(forKey: id)?.close()
         }
@@ -31,7 +31,7 @@ final class SoftwareBrightness {
         }
     }
 
-    func set(_ percent: Int, for id: CGDirectDisplayID) {
+    func set(_ percent: Double, for id: CGDirectDisplayID) {
         guard percent < 100, let screen = eligibleScreen(id) else {
             panels.removeValue(forKey: id)?.close()
             return
@@ -59,7 +59,7 @@ final class SoftwareBrightness {
         if let panel = panels[id] {
             if panel.frame != screen.frame { panel.setFrame(screen.frame, display: true) }
             // Keep a visible floor so a held key cannot make the display black.
-            panel.alphaValue = 0.9 * (1 - Double(Level.clamp(percent)) / 100)
+            panel.alphaValue = 0.9 * (1 - Level.clamp(percent) / 100)
             if !panel.isVisible { panel.orderFrontRegardless() }
         }
     }

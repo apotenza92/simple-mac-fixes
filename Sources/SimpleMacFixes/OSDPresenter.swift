@@ -22,12 +22,51 @@ final class OSDPresenter {
             case .volume, .muted: return "speaker.wave.3.fill"
             }
         }
+
+        /// The single icon of the macOS 27.2 overlay; the speaker shows the level like
+        /// the system's does.
+        func symbol(percent: Double) -> String {
+            switch self {
+            case .brightness: return "sun.max.fill"
+            case .muted: return "speaker.slash.fill"
+            case .volume:
+                switch percent {
+                case ...0: return "speaker.fill"
+                case ..<(100.0 / 3): return "speaker.wave.1.fill"
+                case ..<(200.0 / 3): return "speaker.wave.2.fill"
+                default: return "speaker.wave.3.fill"
+                }
+            }
+        }
+
+        var menuBarItem: MenuBarItemLocator.Item {
+            self == .brightness ? .display : .sound
+        }
+    }
+
+    /// macOS 27.2 replaced the named overlay in the top right corner with a segmented
+    /// capsule under the Sound or Display menu bar icon.
+    enum Style {
+        case named
+        case segmented
+
+        static var current: Style {
+            if #available(macOS 27.2, *) { return .segmented }
+            return .named
+        }
+
+        var size: NSSize {
+            switch self {
+            case .named: return NSSize(width: 292, height: 64)
+            case .segmented: return NSSize(width: 308, height: 64)
+            }
+        }
     }
 
     struct Content: Equatable {
         let kind: Kind
         let name: String
-        let percent: Int
+        let percent: Double
     }
 
     final class Model: ObservableObject {
@@ -44,10 +83,16 @@ final class OSDPresenter {
     private var pendingDiagnostics: DispatchWorkItem?
     private var latestDiagnostics: (content: Content, displayID: CGDirectDisplayID)?
     private lazy var hudCount = diagnostics.integer(forKey: "runtimeHUDCount")
+    private let style = Style.current
+    private let menuBarItems = MenuBarItemLocator()
+
+    init() {
+        if style == .segmented { menuBarItems.refresh() }
+    }
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 292, height: 64),
+            contentRect: NSRect(origin: .zero, size: style.size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -63,12 +108,12 @@ final class OSDPresenter {
         return panel
     }
 
-    func show(kind: Kind, name: String, percent: Int, displayID: CGDirectDisplayID? = nil) {
+    func show(kind: Kind, name: String, percent: Double, displayID: CGDirectDisplayID? = nil) {
         let targetID = displayID ?? CGMainDisplayID()
         showSwiftUI(kind: kind, name: name, percent: min(max(percent, 0), 100), displayID: targetID)
     }
 
-    private func showSwiftUI(kind: Kind, name: String, percent: Int, displayID: CGDirectDisplayID) {
+    private func showSwiftUI(kind: Kind, name: String, percent: Double, displayID: CGDirectDisplayID) {
         guard let screen = NSScreen.screens.first(where: { screen in
             (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID
         }) else { return }
@@ -90,14 +135,15 @@ final class OSDPresenter {
             panel = makePanel()
             let model = Model(content)
             models[displayID] = model
-            panel.contentView = NSHostingView(rootView: OSDView(model: model))
+            if #available(macOS 26.0, *), style == .segmented {
+                panel.contentView = NSHostingView(rootView: SegmentedOSDView(model: model))
+            } else {
+                panel.contentView = NSHostingView(rootView: OSDView(model: model))
+            }
             panels[displayID] = panel
         }
 
-        let frame = screen.frame
-        let menuBarHeight = max(0, frame.maxY - screen.visibleFrame.maxY)
-        let origin = NSPoint(x: frame.maxX - panel.frame.width - 16,
-                             y: frame.maxY - menuBarHeight - panel.frame.height - 8)
+        let origin = self.origin(for: panel.frame.size, kind: kind, on: screen)
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
         if panel.alphaValue != 1 { panel.alphaValue = 1 }
         if !panel.isVisible { panel.orderFrontRegardless() }
@@ -112,6 +158,25 @@ final class OSDPresenter {
             }
             dismissalTimer = timer
             RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    private func origin(for size: NSSize, kind: Kind, on screen: NSScreen) -> NSPoint {
+        let frame = screen.frame
+        let menuBarHeight = max(0, frame.maxY - screen.visibleFrame.maxY)
+        switch style {
+        case .named:
+            return NSPoint(x: frame.maxX - size.width - 16,
+                           y: frame.maxY - menuBarHeight - size.height - 8)
+        case .segmented:
+            // Measured from the system's overlay: centred under the menu bar icon,
+            // 10 points below the menu bar.
+            menuBarItems.refresh()
+            let centre = menuBarItems.offsetFromRightEdge(for: kind.menuBarItem).map { frame.maxX - $0 }
+                ?? frame.maxX - 16 - size.width / 2
+            let x = min(max(centre - size.width / 2, frame.minX + 8), frame.maxX - 8 - size.width)
+            let barHeight = max(menuBarHeight, NSStatusBar.system.thickness)
+            return NSPoint(x: x.rounded(), y: frame.maxY - barHeight - 10 - size.height)
         }
     }
 
@@ -160,7 +225,7 @@ private struct OSDView: View {
     @ObservedObject var model: OSDPresenter.Model
     private var kind: OSDPresenter.Kind { model.content.kind }
     private var name: String { model.content.name }
-    private var percent: Int { model.content.percent }
+    private var percent: Double { model.content.percent }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -176,13 +241,13 @@ private struct OSDView: View {
         .hudGlass()
         .environment(\.colorScheme, appearance.colorScheme)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name), \(percent) percent")
+        .accessibilityLabel("\(name), \(Int(percent.rounded())) percent")
     }
 }
 
 private struct OSDLevel: View {
     let kind: OSDPresenter.Kind
-    let percent: Int
+    let percent: Double
 
     var body: some View {
         HStack(spacing: 7) {
@@ -216,6 +281,60 @@ private struct OSDLevel: View {
     }
 
     private var displayedFraction: CGFloat {
-        kind == .muted ? 0 : CGFloat(percent) / 100
+        kind == .muted ? 0 : percent / 100
+    }
+}
+
+/// The macOS 27.2 overlay: one icon, then 16 segments that fill one step per key press.
+/// Sizes are measured from the system's own overlay.
+@available(macOS 26.0, *)
+private struct SegmentedOSDView: View {
+    @ObservedObject private var appearance = ControlAppearance.shared
+    @ObservedObject var model: OSDPresenter.Model
+    private var content: OSDPresenter.Content { model.content }
+
+    var body: some View {
+        HStack(spacing: 12.5) {
+            Image(systemName: content.kind.symbol(percent: content.percent))
+                .font(.system(size: 21, weight: .medium))
+                .frame(width: 28, alignment: .leading)
+            OSDSegments(fraction: content.kind == .muted ? 0 : content.percent / 100,
+                        emptyOpacity: appearance.colorScheme == .dark ? 0.18 : 0.5)
+                .frame(width: 214, height: 4)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.white)
+        .padding(.leading, 22)
+        .frame(width: 308, height: 64)
+        // The system overlay is a shade darker than plain glass, which keeps the empty
+        // segments visible over white windows.
+        .background(Capsule().fill(.black.opacity(0.14)))
+        .glassEffect(.regular, in: Capsule())
+        .environment(\.colorScheme, appearance.colorScheme)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(content.name), \(Int(content.percent.rounded())) percent")
+    }
+}
+
+private struct OSDSegments: View {
+    static let count = 16
+    let fraction: CGFloat
+    let emptyOpacity: Double
+
+    var body: some View {
+        GeometryReader { geometry in
+            let spacing: CGFloat = 1
+            let width = (geometry.size.width - spacing * CGFloat(Self.count - 1)) / CGFloat(Self.count)
+            HStack(spacing: spacing) {
+                ForEach(0..<Self.count, id: \.self) { index in
+                    let filled = min(max(fraction * CGFloat(Self.count) - CGFloat(index), 0), 1)
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 1).fill(.white.opacity(emptyOpacity))
+                        RoundedRectangle(cornerRadius: 1).fill(.white).frame(width: width * filled)
+                    }
+                    .frame(width: width)
+                }
+            }
+        }
     }
 }

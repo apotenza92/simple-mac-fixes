@@ -10,7 +10,7 @@ public final class DDCController: ObservableObject {
     public struct Display: Identifiable, Equatable {
         public let id: CGDirectDisplayID
         public let name: String
-        public var percent: Int
+        public var percent: Double
         public var method: Method
         public let isBuiltIn: Bool
         public var canAdjust: Bool { method != .unavailable }
@@ -22,7 +22,7 @@ public final class DDCController: ObservableObject {
     private struct Endpoint {
         let service: CFTypeRef
         let maximum: Int
-        let current: Int
+        let current: Double
         let name: String?
         let serial: UInt32
     }
@@ -61,8 +61,8 @@ public final class DDCController: ObservableObject {
         return NSScreen.screens.first { $0.frame.contains(mouse) }.flatMap(Self.screenID)
             ?? displays.first?.id
     }
-    public var percent: Int { displays.first(where: { $0.id == targetDisplayID })?.percent ?? 100 }
-    public var pendingPercent: Int { percent }
+    public var percent: Double { displays.first(where: { $0.id == targetDisplayID })?.percent ?? 100 }
+    public var pendingPercent: Double { percent }
     public var shouldConsumeBrightnessKeys: Bool {
         guard isAvailable else { return false }
         if isLinked { return displays.first { $0.id == masterDisplayID }?.method != .native }
@@ -148,7 +148,7 @@ public final class DDCController: ObservableObject {
             let active = CGDisplayIsActive(id) != 0 && screen != nil
             let method: Method = !active ? .unavailable : native != nil ? .native : builtIn ? .unavailable : .software
             return Display(id: id, name: screen?.localizedName ?? "Display \(id)",
-                           percent: native.map { Int(($0 * 100).rounded()) }
+                           percent: native.map { Double($0) * 100 }
                             ?? (brightnessMemory.level(for: brightnessIdentities[id])
                                 ?? (previous[id]?.method == .software ? previous[id]!.percent : 100)),
                            method: method, isBuiltIn: builtIn)
@@ -195,7 +195,7 @@ public final class DDCController: ObservableObject {
         guard isLinked, isEnabled else { return }
         guard let master = displays.first(where: { $0.id == masterDisplayID }) else { return }
         let value = master.method == .native
-            ? NativeBrightness.get(master.id).map { Level.clamp(Int(($0 * 100).rounded())) } ?? master.percent
+            ? NativeBrightness.get(master.id).map { Level.clamp(Double($0) * 100) } ?? master.percent
             : master.percent
         let followers = Dictionary(uniqueKeysWithValues: displays.filter { $0.canAdjust && $0.id != master.id }.map { ($0.id, value) })
         applyLevels(followers, observed: [master.id: value])
@@ -219,7 +219,7 @@ public final class DDCController: ObservableObject {
 
     /// Read the native master's actual post-key level; macOS applies its own
     /// step size and animation. Never add another step to that display.
-    public func nudge(_ delta: Int, completion: @escaping @MainActor () -> Void = {}) {
+    public func nudge(up: Bool, fine: Bool, completion: @escaping @MainActor () -> Void = {}) {
         guard isAvailable else { controlledDisplayIDs = []; completion(); return }
         if isLinked, let master = displays.first(where: { $0.id == masterDisplayID }) {
             if master.method == .native {
@@ -236,13 +236,13 @@ public final class DDCController: ObservableObject {
                 }
                 return
             }
-            let target = Level.clamp(master.percent + delta)
+            let target = Level.stepped(master.percent, up: up, fine: fine)
             let targets = displays.filter { $0.canAdjust }
             applyLevels(Dictionary(uniqueKeysWithValues: targets.map { ($0.id, target) }))
             controlledDisplayIDs = targets.map(\.id)
         } else if let display = displays.first(where: { $0.id == targetDisplayID }),
                   display.canAdjust, display.method != .native {
-            applyLevels([display.id: Level.clamp(display.percent + delta)])
+            applyLevels([display.id: Level.stepped(display.percent, up: up, fine: fine)])
             controlledDisplayIDs = [display.id]
         } else {
             controlledDisplayIDs = []
@@ -258,7 +258,7 @@ public final class DDCController: ObservableObject {
         }
         let now = ProcessInfo.processInfo.systemUptime
         if let actual = NativeBrightness.get(master) {
-            let target = Level.clamp(Int((actual * 100).rounded()))
+            let target = Level.clamp(Double(actual) * 100)
             let followers = displays.filter { $0.canAdjust && $0.id != master }
             let changed = applyLevels(Dictionary(uniqueKeysWithValues: followers.map { ($0.id, target) }),
                                       observed: [master: target])
@@ -281,12 +281,12 @@ public final class DDCController: ObservableObject {
         nativeKeyBurstActive = false
     }
 
-    public func set(_ value: Int) {
+    public func set(_ value: Double) {
         guard let id = targetDisplayID else { return }
         set(value, for: id)
     }
 
-    public func set(_ value: Int, for id: CGDirectDisplayID) {
+    public func set(_ value: Double, for id: CGDirectDisplayID) {
         guard isEnabled, let source = displays.first(where: { $0.id == id }), source.canAdjust else { return }
         stopNativeKeyBurst()
         let values = Self.linkedLevels(Dictionary(uniqueKeysWithValues: displays.filter { $0.canAdjust }.map { ($0.id, $0.percent) }),
@@ -295,8 +295,8 @@ public final class DDCController: ObservableObject {
         publishState()
     }
 
-    nonisolated static func linkedLevels(_ levels: [CGDirectDisplayID: Int], source: CGDirectDisplayID,
-                                         value: Int, linked: Bool) -> [CGDirectDisplayID: Int] {
+    nonisolated static func linkedLevels(_ levels: [CGDirectDisplayID: Double], source: CGDirectDisplayID,
+                                         value: Double, linked: Bool) -> [CGDirectDisplayID: Double] {
         guard levels[source] != nil else { return [:] }
         let target = Level.clamp(value)
         guard linked else { return [source: target] }
@@ -306,7 +306,7 @@ public final class DDCController: ObservableObject {
     /// A linked operation publishes one complete array, so subscribers never
     /// see a new master level paired with an old follower level.
     @discardableResult
-    private func applyLevels(_ values: [CGDirectDisplayID: Int], observed: [CGDirectDisplayID: Int] = [:]) -> Bool {
+    private func applyLevels(_ values: [CGDirectDisplayID: Double], observed: [CGDirectDisplayID: Double] = [:]) -> Bool {
         var next = displays
         for (id, value) in values {
             guard let index = next.firstIndex(where: { $0.id == id }), next[index].percent != value else { continue }
@@ -320,12 +320,12 @@ public final class DDCController: ObservableObject {
         return true
     }
 
-    private func apply(_ value: Int, to id: CGDirectDisplayID, snapshot: inout [Display]) {
+    private func apply(_ value: Double, to id: CGDirectDisplayID, snapshot: inout [Display]) {
         guard let index = snapshot.firstIndex(where: { $0.id == id }) else { return }
         switch snapshot[index].method {
         case .native:
             guard NativeBrightness.set(id, percent: value) else { return }
-            snapshot[index].percent = NativeBrightness.get(id).map { Int(($0 * 100).rounded()) } ?? value
+            snapshot[index].percent = NativeBrightness.get(id).map { Double($0) * 100 } ?? value
         case .software:
             brightnessMemory.remember(value, for: brightnessIdentities[id])
             softwareBrightness.set(value, for: id)
@@ -340,7 +340,7 @@ public final class DDCController: ObservableObject {
             revisions[id] = revision
             let write = writeI2C
             let work = DispatchWorkItem { [weak self] in
-                let raw = Int((Double(value) / 100 * Double(endpoint.maximum)).rounded())
+                let raw = Int((value / 100 * Double(endpoint.maximum)).rounded())
                 let success = Self.writeLuminance(endpoint.service, value: raw, writeI2C: write)
                 usleep(50_000)
                 DispatchQueue.main.async {
@@ -367,7 +367,7 @@ public final class DDCController: ObservableObject {
         var next = displays
         for index in next.indices where next[index].method == .native {
             if let value = NativeBrightness.get(next[index].id) {
-                next[index].percent = Level.clamp(Int((value * 100).rounded()))
+                next[index].percent = Level.clamp(Double(value) * 100)
             }
         }
         if next != displays { displays = next; publishState() }
@@ -433,7 +433,7 @@ public final class DDCController: ObservableObject {
                   let av = create(kCFAllocatorDefault, service)?.takeRetainedValue(),
                   let reading = readLuminance(av, writeI2C: writeI2C, readI2C: readI2C) else { continue }
             found.append(Endpoint(service: av, maximum: reading.maximum,
-                                  current: Level.clamp(Int((Double(reading.current) / Double(reading.maximum) * 100).rounded())),
+                                  current: Level.clamp(Double(reading.current) / Double(reading.maximum) * 100),
                                   name: name, serial: serial))
         }
         return found

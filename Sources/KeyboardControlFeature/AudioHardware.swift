@@ -115,10 +115,10 @@ enum AudioHardware {
         if AudioObjectHasProperty(device.id, &mute) {
             _ = AudioObjectGetPropertyData(device.id, &mute, 0, nil, &size, &muted)
         }
-        return Level(percent: Int((maximum * 100).rounded()), isMuted: muted != 0)
+        return Level(percent: Double(maximum) * 100, isMuted: muted != 0)
     }
 
-    static func setNativeVolume(_ device: AudioDevice, percent: Int) {
+    static func setNativeVolume(_ device: AudioDevice, percent: Double) {
         let properties = volumeProperties(device)
         let values = properties.compactMap { scalar(device, property: $0) }
         guard values.count == properties.count, !values.isEmpty else { return }
@@ -145,8 +145,8 @@ enum AudioHardware {
         }
     }
 
-    static func nativeChannelVolumes(_ values: [Float32], percent: Int) -> [Float32] {
-        let target = Float32(Level.clamp(percent)) / 100
+    static func nativeChannelVolumes(_ values: [Float32], percent: Double) -> [Float32] {
+        let target = Float32(Level.clamp(percent) / 100)
         let maximum = values.max() ?? 0
         // Preserve the channel balance instead of resetting left/right on every drag.
         return values.map { maximum > 0 ? min(1, max(0, $0 / maximum * target)) : target }

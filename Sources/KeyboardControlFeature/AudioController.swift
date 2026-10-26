@@ -43,7 +43,7 @@ public final class AudioController: ObservableObject {
         self.defaults = defaults
         defaults.register(defaults: [Keys.enabled: true, Keys.percent: 50, Keys.muted: false])
         isEnabled = defaults.bool(forKey: Keys.enabled)
-        level = Level(percent: defaults.integer(forKey: Keys.percent), isMuted: defaults.bool(forKey: Keys.muted))
+        level = Level(percent: defaults.double(forKey: Keys.percent), isMuted: defaults.bool(forKey: Keys.muted))
     }
 
     public var isApplyingSoftwareGain: Bool {
@@ -89,7 +89,7 @@ public final class AudioController: ObservableObject {
         state = .stopped
     }
 
-    public func setVolume(_ percent: Int) {
+    public func setVolume(_ percent: Double) {
         refreshIfDeviceChanged()
         if case .native = state {
             guard let output = AudioHardware.defaultOutput(), output.uid == activeDeviceUID else { return }
@@ -102,9 +102,9 @@ public final class AudioController: ObservableObject {
         applyLevel()
     }
 
-    public func nudgeVolume(_ delta: Int) {
+    public func stepVolume(up: Bool, fine: Bool) {
         guard isApplyingSoftwareGain else { return }
-        level.nudge(delta)
+        level.step(up: up, fine: fine)
         applyLevel()
     }
 
@@ -145,7 +145,7 @@ public final class AudioController: ObservableObject {
             return
         }
         // Native changes never overwrite the saved software gain for fixed-volume outputs.
-        level = Level(percent: defaults.integer(forKey: Keys.percent), isMuted: defaults.bool(forKey: Keys.muted))
+        level = Level(percent: defaults.double(forKey: Keys.percent), isMuted: defaults.bool(forKey: Keys.muted))
         guard isEnabled else {
             state = .stopped
             return
