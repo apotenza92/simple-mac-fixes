@@ -23,7 +23,7 @@ A free app that fixes the small things about a Mac that annoy people, especially
 Download it from the [download page](https://apotenza92.github.io/simple-mac-fixes/) and drag it to Applications, or install it with [Homebrew](https://brew.sh):
 
 ```sh
-brew install --cask apotenza92/tap/simple-mac-fixes
+brew trust apotenza92/tap && brew install --cask apotenza92/tap/simple-mac-fixes
 ```
 
 The first time you open it, a short guide asks for the permissions it needs. Updates install automatically.
