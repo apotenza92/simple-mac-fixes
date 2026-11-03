@@ -49,8 +49,10 @@ final class SoftwareBrightness {
             panel.hasShadow = false
             panel.ignoresMouseEvents = true
             panel.hidesOnDeactivate = false
-            // Cover application content while keeping menu controls and the HUD usable.
-            panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1)
+            // Above everything the window server draws, so the menu bar, menus,
+            // notifications, the volume and brightness overlay and other pop-ups
+            // dim with the rest of the screen. It ignores the mouse, so they stay usable.
+            panel.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .stationary]
             panel.isReleasedWhenClosed = false
             panel.animationBehavior = .none
