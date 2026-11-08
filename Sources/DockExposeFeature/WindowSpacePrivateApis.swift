@@ -42,6 +42,12 @@ nonisolated private func CGSGetConnectionPSN(_ cid: CGSConnectionID,
 nonisolated private func SimpleMacFixesGetProcessPID(_ psn: UnsafeMutablePointer<ProcessSerialNumber>,
                                                _ pid: UnsafeMutablePointer<pid_t>) -> Void
 
+@_silgen_name("CGSHWCaptureWindowList")
+nonisolated private func CGSHWCaptureWindowList(_ cid: CGSConnectionID,
+                                                _ windowList: UnsafeMutablePointer<CGWindowID>,
+                                                _ windowCount: UInt32,
+                                                _ options: UInt32) -> Unmanaged<CFArray>?
+
 @_silgen_name("_AXUIElementGetWindow")
 @discardableResult
 nonisolated private func _AXUIElementGetWindow(_ axUIElement: AXUIElement,
@@ -68,6 +74,19 @@ enum WindowSpacePrivateApis {
             return nil
         }
         return windowID
+    }
+
+    /// A picture of one window straight from the window server, without its shadow:
+    /// about 16 ms against ScreenCaptureKit's 45 ms plus a window listing, and it also
+    /// works for windows on other desktops and of hidden apps. Blocks, so call it off
+    /// the main thread. `bestResolution` gives the screen's pixels, otherwise points.
+    nonisolated static func captureWindow(_ windowID: CGWindowID, bestResolution: Bool) -> CGImage? {
+        // kCGSCaptureIgnoreGlobalClipShape, plus kCGSCaptureBestResolution or kCGSWindowCaptureNominalResolution.
+        let options: UInt32 = (1 << 11) | (bestResolution ? 1 << 8 : 1 << 9)
+        var id = windowID
+        let images = CGSHWCaptureWindowList(CGSMainConnectionID(), &id, 1, options)?.takeRetainedValue() as? [CGImage]
+        guard let image = images?.first, image.width > 1, image.height > 1 else { return nil }
+        return image
     }
 
     nonisolated static func spaces(for windowID: CGWindowID) -> Set<Int> {
