@@ -3,13 +3,14 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.1.2</title>
-      <sparkle:version>100290000</sparkle:version>
-      <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
+      <title>v0.1.3</title>
+      <sparkle:version>100390000</sparkle:version>
+      <sparkle:shortVersionString>0.1.3</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- When an external screen is dimmed by Simple Mac Fixes, the menu bar, menus, notifications, the volume and brightness overlay and other pop-ups now dim with the rest of the screen. Before, they stayed at full brightness.
+      <description sparkle:format="plain-text">- Window previews in the Dock now fill in with pictures of your windows about three times faster, so you no longer see empty cards while they load.
+- Windows of a hidden app now show a picture in the preview instead of just the app's icon.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.2/Simple-Mac-Fixes-v0.1.2-macos-arm64.zip" length="3660011" type="application/octet-stream" sparkle:edSignature="KEeu6wMDC++rfB87JDLMpnZ9TsfgAFxTpzv1hqIgCtAGYSwMvuK165ORDOZJ357GuMbMDw6QUgj7n2kWMiFGBA==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.3/Simple-Mac-Fixes-v0.1.3-macos-arm64.zip" length="3664997" type="application/octet-stream" sparkle:edSignature="+yUd1kt3wZykw+1rAS4wQ8rEZTVaIVhNN1Su7sH8luamJq1LX4qBpggcJq41RuLkkwfqtyEuFqh7dMtvv2YaAA==" />
     </item>
   </channel>
 </rss>
