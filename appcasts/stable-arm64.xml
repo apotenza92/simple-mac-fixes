@@ -3,14 +3,16 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.1.3</title>
-      <sparkle:version>100390000</sparkle:version>
-      <sparkle:shortVersionString>0.1.3</sparkle:shortVersionString>
+      <title>v0.1.4</title>
+      <sparkle:version>100490000</sparkle:version>
+      <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- Window previews in the Dock now fill in with pictures of your windows about three times faster, so you no longer see empty cards while they load.
-- Windows of a hidden app now show a picture in the preview instead of just the app's icon.
+      <description sparkle:format="plain-text">- Double-clicking a button along the top of a window in apps like Claude no longer maximizes the window. Double-clicking an empty part of the title bar still does.
+- The volume and brightness overlay now appears in the right place on a screen that sits above another one.
+- The volume and brightness overlay is now centred along the top of the screen while an app is full screen.
+- The volume and brightness overlay no longer jumps to the corner of the screen just after you log in or when the menu bar is hidden.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.3/Simple-Mac-Fixes-v0.1.3-macos-arm64.zip" length="3664997" type="application/octet-stream" sparkle:edSignature="+yUd1kt3wZykw+1rAS4wQ8rEZTVaIVhNN1Su7sH8luamJq1LX4qBpggcJq41RuLkkwfqtyEuFqh7dMtvv2YaAA==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.4/Simple-Mac-Fixes-v0.1.4-macos-arm64.zip" length="3667439" type="application/octet-stream" sparkle:edSignature="W/g95eYv5zj01Ud3p9ePgpdgDDKhw/hhDvmJfbc8iGr66w4DhdzVup+bBz9GjbnWfo8gl7fsk2I8gqMXuST2CQ==" />
     </item>
   </channel>
 </rss>
