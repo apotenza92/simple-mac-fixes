@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import SimpleMacFixesCore
 import SwiftUI
 
 @MainActor
@@ -143,7 +144,7 @@ final class OSDPresenter {
             panels[displayID] = panel
         }
 
-        let origin = self.origin(for: panel.frame.size, kind: kind, on: screen)
+        let origin = self.origin(for: panel.frame.size, kind: kind, on: screen, displayID: displayID)
         if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
         if panel.alphaValue != 1 { panel.alphaValue = 1 }
         if !panel.isVisible { panel.orderFrontRegardless() }
@@ -161,7 +162,7 @@ final class OSDPresenter {
         }
     }
 
-    private func origin(for size: NSSize, kind: Kind, on screen: NSScreen) -> NSPoint {
+    private func origin(for size: NSSize, kind: Kind, on screen: NSScreen, displayID: CGDirectDisplayID) -> NSPoint {
         let frame = screen.frame
         let menuBarHeight = max(0, frame.maxY - screen.visibleFrame.maxY)
         switch style {
@@ -170,13 +171,18 @@ final class OSDPresenter {
                            y: frame.maxY - menuBarHeight - size.height - 8)
         case .segmented:
             // Measured from the system's overlay: centred under the menu bar icon,
-            // 10 points below the menu bar.
+            // 10 points below the menu bar. A full-screen app has no menu bar to hang
+            // from, so there the overlay is centred along the top of the screen.
+            let barHeight = max(menuBarHeight, NSStatusBar.system.thickness, screen.safeAreaInsets.top)
+            let y = frame.maxY - barHeight - 10 - size.height
+            if DisplayPlacement.isFullScreenShowing(on: displayID) {
+                return NSPoint(x: (frame.midX - size.width / 2).rounded(), y: y)
+            }
             menuBarItems.refresh()
             let centre = menuBarItems.offsetFromRightEdge(for: kind.menuBarItem).map { frame.maxX - $0 }
                 ?? frame.maxX - 16 - size.width / 2
             let x = min(max(centre - size.width / 2, frame.minX + 8), frame.maxX - 8 - size.width)
-            let barHeight = max(menuBarHeight, NSStatusBar.system.thickness)
-            return NSPoint(x: x.rounded(), y: frame.maxY - barHeight - 10 - size.height)
+            return NSPoint(x: x.rounded(), y: y)
         }
     }
 

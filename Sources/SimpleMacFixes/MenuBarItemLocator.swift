@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import SimpleMacFixesCore
 
 /// Finds where the Sound, Display and Control Center icons sit in the menu bar, so the
 /// macOS 27.2 volume and brightness overlay can hang beneath them like the system's own.
@@ -20,6 +21,9 @@ final class MenuBarItemLocator: @unchecked Sendable {
     private var offsets: [Item: CGFloat] = [:]
     private var lastRefresh: TimeInterval = -.infinity
     private var isRefreshing = false
+    /// The menu bar can still be empty just after login; keep looking for about a minute
+    /// so the first key press already has a position.
+    private var startupRetries = 30
 
     /// When an icon isn't in the menu bar, macOS shows it in place of the Control Center
     /// icon while the overlay is up, so the overlay sits under Control Center instead.
@@ -38,9 +42,17 @@ final class MenuBarItemLocator: @unchecked Sendable {
         guard shouldRun else { return }
         queue.async { [self] in
             let found = Self.lookUp()
-            lock.withLock {
-                offsets = found
+            let shouldRetry = lock.withLock { () -> Bool in
+                // A lookup that found nothing timed out or caught the menu bar hidden.
+                // Forgetting the last answer would send the overlay to the fallback spot.
+                if !found.isEmpty { offsets = found }
                 isRefreshing = false
+                guard offsets.isEmpty, startupRetries > 0 else { return false }
+                startupRetries -= 1
+                return true
+            }
+            if shouldRetry {
+                queue.asyncAfter(deadline: .now() + 2) { [self] in refresh() }
             }
         }
     }
@@ -69,7 +81,7 @@ final class MenuBarItemLocator: @unchecked Sendable {
         if let identifier = element.string(kAXIdentifierAttribute),
            let item = Item(rawValue: identifier),
            let frame = element.frame,
-           let screen = screens.first(where: { $0.minX <= frame.midX && frame.midX < $0.maxX }) {
+           let screen = DisplayPlacement.screen(forMenuBarItem: frame, among: screens) {
             result[item] = screen.maxX - frame.midX
             return
         }

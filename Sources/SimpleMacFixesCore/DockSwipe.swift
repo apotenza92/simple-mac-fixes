@@ -121,6 +121,12 @@ enum SkyLight {
         var count: Int { isDesktop.count }
     }
 
+    /// One entry per display, with its spaces and the one showing now.
+    static func managedDisplaySpaces() -> [[String: Any]]? {
+        guard let mainConnectionID, let copyManagedDisplaySpaces else { return nil }
+        return copyManagedDisplaySpaces(mainConnectionID(), nil)?.takeRetainedValue() as? [[String: Any]]
+    }
+
     /// The menu-bar display's spaces and the active one, from live window-server state.
     static func spaces() -> Spaces? {
         guard available else { return nil }
