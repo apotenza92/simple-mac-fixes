@@ -150,7 +150,7 @@ final class AccessibilityService: @unchecked Sendable {
                     draggableRect: interactionRects.draggableRect,
                     hasReliableFallbackEvidence: true
                   ),
-                  !(isDoubleClick && hasInteractiveElement(at: location, in: window)) else {
+                  !(isDoubleClick && (pageIsUnreadable(in: window) || hasInteractiveElement(at: location, in: window))) else {
                 continue
             }
             guard let context = windowContext(
@@ -1004,6 +1004,10 @@ final class AccessibilityService: @unchecked Sendable {
             return true
         }
 
+        if isDoubleClick, pageIsUnreadable(in: window) {
+            return true
+        }
+
         // Chromium answers with a plain group drawn over its tabs and title-bar buttons,
         // so on a group a double-click also looks down from the window for a control
         // under the point. Native toolbars are left alone: where they answer with the
@@ -1013,6 +1017,22 @@ final class AccessibilityService: @unchecked Sendable {
             return false
         }
         return hasInteractiveElement(at: location, in: window)
+    }
+
+    /// Electron apps such as Claude keep their page hidden from Accessibility unless
+    /// asked, so a button in a drawn title bar looks the same as empty title bar. The
+    /// double-click then goes to the app, which only zooms where the page can be dragged.
+    private func pageIsUnreadable(in window: AXUIElement) -> Bool {
+        let app = AXUIElementCreateApplication(AXHelpers.pid(of: window))
+        return Self.isElectronPageUnreadable(
+            manualAccessibility: AXHelpers.boolAttribute("AXManualAccessibility", on: app),
+            enhancedUserInterface: AXHelpers.boolAttribute("AXEnhancedUserInterface", on: app)
+        )
+    }
+
+    /// Only Electron answers for `AXManualAccessibility`; other apps report nil.
+    static func isElectronPageUnreadable(manualAccessibility: Bool?, enhancedUserInterface: Bool?) -> Bool {
+        manualAccessibility == false && enhancedUserInterface != true
     }
 
     private func hasInteractiveElement(at location: CGPoint, in window: AXUIElement) -> Bool {

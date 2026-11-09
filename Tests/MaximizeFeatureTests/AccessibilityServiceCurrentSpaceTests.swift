@@ -413,6 +413,33 @@ final class AccessibilityServiceCurrentSpaceTests: XCTestCase {
         )
     }
 
+    func testElectronPageIsUnreadableWhenItsAccessibilityIsOff() {
+        XCTAssertTrue(
+            AccessibilityService.isElectronPageUnreadable(manualAccessibility: false, enhancedUserInterface: false)
+        )
+        XCTAssertTrue(
+            AccessibilityService.isElectronPageUnreadable(manualAccessibility: false, enhancedUserInterface: nil)
+        )
+    }
+
+    func testElectronPageIsReadableOnceAccessibilityIsOn() {
+        XCTAssertFalse(
+            AccessibilityService.isElectronPageUnreadable(manualAccessibility: true, enhancedUserInterface: false)
+        )
+        XCTAssertFalse(
+            AccessibilityService.isElectronPageUnreadable(manualAccessibility: false, enhancedUserInterface: true)
+        )
+    }
+
+    func testNonElectronAppsAreNotTreatedAsUnreadablePages() {
+        XCTAssertFalse(
+            AccessibilityService.isElectronPageUnreadable(manualAccessibility: nil, enhancedUserInterface: false)
+        )
+        XCTAssertFalse(
+            AccessibilityService.isElectronPageUnreadable(manualAccessibility: nil, enhancedUserInterface: nil)
+        )
+    }
+
     private struct FakeNode {
         let role: String
         let frame: CGRect?
