@@ -3,16 +3,19 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.1.4</title>
-      <sparkle:version>100490000</sparkle:version>
-      <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
+      <title>v0.1.5</title>
+      <sparkle:version>100590000</sparkle:version>
+      <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- Double-clicking a button along the top of a window in apps like Claude no longer maximizes the window. Double-clicking an empty part of the title bar still does.
-- The volume and brightness overlay now appears in the right place on a screen that sits above another one.
-- The volume and brightness overlay is now centred along the top of the screen while an app is full screen.
-- The volume and brightness overlay no longer jumps to the corner of the screen just after you log in or when the menu bar is hidden.
+      <description sparkle:format="plain-text">- Window previews in the Dock have a new look that matches the Dock. Each window is a larger card with its picture and name, on the same glass as the Dock.
+- Each card now has the window's own close, minimize and maximize buttons next to its name, always in the same place.
+- Window names are easier to read on any desktop picture, in light and dark mode.
+- The preview now covers the app's name under the pointer, and it stays in line with the icon when the Dock grows the icons.
+- When an app has more windows than fit on the screen, you can scroll through them.
+- The preview opens faster, opens at once with no fade, and no longer flashes the first time you pick a window.
+- Window names now show correctly for browsers that give every window the app's name.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.4/Simple-Mac-Fixes-v0.1.4-macos-x64.zip" length="3711471" type="application/octet-stream" sparkle:edSignature="G8D4ptgqO3SIRZtS8yRk4IblA8scC6t2JmplX/dRxy0eKpW03gnf5EoXhBFMdj6ktbJ1osgln4XCFsgrdkmbCQ==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.5/Simple-Mac-Fixes-v0.1.5-macos-x64.zip" length="3722865" type="application/octet-stream" sparkle:edSignature="pw84z/LGaxcaLzfol3LtuYcpdGOFaWlSge3zITA7V8hhAzzEAQNN1Wr53ylWFtzfP04O9jooVoLCN/HpRrveDQ==" />
     </item>
   </channel>
 </rss>
