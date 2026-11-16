@@ -27,6 +27,9 @@ final class MissionControlWatch {
         return isShowing
     }
 
+    /// The last answer read, without reading the window list again.
+    nonisolated static var lastKnownIsShowing: Bool { lastCheckLock.withLock { lastCheck?.isShowing ?? false } }
+
     nonisolated private static func readWindowList() -> Bool {
         let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID)
             as? [[String: Any]] ?? []

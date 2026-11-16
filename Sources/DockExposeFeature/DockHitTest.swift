@@ -126,11 +126,38 @@ enum DockHitTest {
         return nil
     }
 
+    /// Every app icon in the Dock with its frame, in top-left screen coordinates. Asks
+    /// the Dock over accessibility, so it runs off the main thread.
+    static func appItems() -> [(bundleIdentifier: String, frame: CGRect)] {
+        _ = stableMetadataObserver
+        guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return [] }
+        let application = AXUIElementCreateApplication(dock.processIdentifier)
+        var items: [(bundleIdentifier: String, frame: CGRect)] = []
+        for list in (attribute(application, for: kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+            for item in (attribute(list, for: kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
+                guard (attribute(item, for: kAXSubroleAttribute) as String?) == "AXApplicationDockItem",
+                      let bundleIdentifier = bundleIdentifier(forApplicationURL: attribute(item, for: kAXURLAttribute)),
+                      let frame = frame(of: item) else { continue }
+                items.append((bundleIdentifier, frame))
+            }
+        }
+        return items
+    }
+
+    /// The icon in `items` that `point` is on, found without asking the Dock.
+    static func appItem(at point: CGPoint, in items: [(bundleIdentifier: String, frame: CGRect)])
+        -> (bundleIdentifier: String, frame: CGRect)? {
+        let point = onIconRow(point)
+        return items.first { $0.frame.contains(point) }
+    }
+
     /// The running app's Dock icon under `point`, with the icon's frame in
     /// top-left screen coordinates, so a preview can sit next to it.
     static func appIcon(at point: CGPoint) -> (bundleIdentifier: String, frame: CGRect)? {
         _ = stableMetadataObserver
-        guard isNearDockEdge(point), let element = element(at: point), isInDockProcess(element) else { return nil }
+        guard isNearDockEdge(point) else { return nil }
+        let point = onIconRow(point)
+        guard let element = element(at: point), isInDockProcess(element) else { return nil }
         var current: AXUIElement? = element
         while let item = current, isInDockProcess(item) {
             if case let .appDockIcon(bundleIdentifier)? = dockItemKind(for: item) {
@@ -230,7 +257,7 @@ enum DockHitTest {
         return nil
     }
 
-    nonisolated(unsafe) private static var dockGeometry: (edge: String, thickness: CGFloat, expiresAt: TimeInterval)?
+    nonisolated(unsafe) private static var dockGeometry: (edge: String, thickness: CGFloat, magnifies: Bool, expiresAt: TimeInterval)?
 
     /// The screen edge the Dock sits on: "bottom", "left" or "right".
     static var dockEdge: String {
@@ -240,9 +267,38 @@ enum DockHitTest {
         return dockGeometry?.edge ?? "bottom"
     }
 
+    /// Whether the Dock's magnification is on.
+    static var dockMagnifies: Bool {
+        _ = isInDockStrip(.zero)
+        stableMetadataLock.lock()
+        defer { stableMetadataLock.unlock() }
+        return dockGeometry?.magnifies ?? false
+    }
+
+    nonisolated(unsafe) private static var lastEdgeCheck: TimeInterval = 0
+
+    /// The Dock can move to another screen edge at any time, and its settings are read
+    /// at most once a second. A pointer at a different edge than the one read reads them
+    /// again at once, at most 4 times a second. Returns true when the edge changed.
+    static func checkDockEdge(near point: CGPoint) -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        stableMetadataLock.lock()
+        let geometry = dockGeometry
+        let recentlyChecked = now - lastEdgeCheck < 0.25
+        stableMetadataLock.unlock()
+        guard let geometry, !recentlyChecked, let bounds = displayBounds(containing: point) else { return false }
+        let edges = [("left", point.x - bounds.minX), ("right", bounds.maxX - point.x), ("bottom", bounds.maxY - point.y)]
+        guard edges.contains(where: { $0.0 != geometry.edge && $0.1 <= geometry.thickness }) else { return false }
+        stableMetadataLock.lock()
+        lastEdgeCheck = now
+        dockGeometry = nil
+        stableMetadataLock.unlock()
+        return dockEdge != geometry.edge
+    }
+
     /// Whether `point` is in the thin strip the Dock bar occupies, from the Dock's
     /// own settings. Costs no accessibility query, so it can gate one on the click path.
-    static func isInDockStrip(_ point: CGPoint) -> Bool {
+    static func isInDockStrip(_ point: CGPoint, margin: CGFloat = 0) -> Bool {
         let now = ProcessInfo.processInfo.systemUptime
         stableMetadataLock.lock()
         var geometry = dockGeometry
@@ -255,16 +311,29 @@ enum DockHitTest {
             var magnified = false
             if let value = CFPreferencesCopyAppValue("magnification" as CFString, domain) as? NSNumber { magnified = value.boolValue }
             let large = magnified ? (CFPreferencesCopyAppValue("largesize" as CFString, domain) as? Double ?? tile) : tile
-            geometry = (edge, CGFloat(max(tile, large)) + 24, now + 5)
+            geometry = (edge, CGFloat(max(tile, large)) + 24, magnified, now + 1)
             stableMetadataLock.lock()
             dockGeometry = geometry
             stableMetadataLock.unlock()
         }
         guard let geometry, let bounds = displayBounds(containing: point) else { return false }
         switch geometry.edge {
-        case "left": return point.x - bounds.minX <= geometry.thickness
-        case "right": return bounds.maxX - point.x <= geometry.thickness
-        default: return bounds.maxY - point.y <= geometry.thickness
+        case "left": return point.x - bounds.minX <= geometry.thickness + margin
+        case "right": return bounds.maxX - point.x <= geometry.thickness + margin
+        default: return bounds.maxY - point.y <= geometry.thickness + margin
+        }
+    }
+
+    /// The Dock leaves a few points between the screen edge and its icons. A pointer
+    /// pushed against the edge, as when it brings up a hidden Dock, still points at
+    /// the icon in line with it, as the Dock itself treats it.
+    static func onIconRow(_ point: CGPoint) -> CGPoint {
+        guard let bounds = displayBounds(containing: point) else { return point }
+        let inset: CGFloat = 12
+        switch dockEdge {
+        case "left": return CGPoint(x: max(point.x, bounds.minX + inset), y: point.y)
+        case "right": return CGPoint(x: min(point.x, bounds.maxX - inset), y: point.y)
+        default: return CGPoint(x: point.x, y: min(point.y, bounds.maxY - inset))
         }
     }
 

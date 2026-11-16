@@ -3,29 +3,67 @@ import Testing
 
 import CoreGraphics
 
-@Test @MainActor func previewSitsPastTheDocksNameBubbleAndStaysOnScreen() {
-    let screen = CGRect(x: 0, y: 0, width: 1500, height: 900)
+/// Icon frames and label positions read from the macOS 27 Dock on screen (2x display).
+@Test @MainActor func previewCoversTheDocksNameLabelExactly() {
+    func edge(_ icon: CGRect, _ dock: String, _ magnified: Bool) -> CGFloat {
+        DockPreviewPanel.labelEdge(beside: icon, edge: dock, magnified: magnified, scale: 2)
+    }
+    // Bottom Dock: the label's arrow tip.
+    #expect(edge(CGRect(x: 519.7, y: 931, width: 34, height: 46), "bottom", false) == 929)
+    #expect(edge(CGRect(x: 347.05, y: 902.16, width: 58.84, height: 74.84), "bottom", false) == 900.5)
+    #expect(edge(CGRect(x: 419.7, y: 867, width: 98, height: 110), "bottom", true) == 874)
+    #expect(edge(CGRect(x: 438, y: 867.7, width: 97.3, height: 109.3), "bottom", true) == 875)
+    #expect(edge(CGRect(x: 282.9, y: 893, width: 68, height: 84), "bottom", true) == 901)
+    // Side Docks: the label's end nearest the icon.
+    #expect(edge(CGRect(x: 5, y: 271.2, width: 46, height: 34), "left", false) == 56.5)
+    #expect(edge(CGRect(x: 5, y: 155.2, width: 142, height: 130), "left", true) == 147.5)
+    #expect(edge(CGRect(x: 5, y: 189.5, width: 109.3, height: 97.3), "left", true) == 114.5)
+    #expect(edge(CGRect(x: 1459, y: 271.2, width: 46, height: 34), "right", false) == 1455.5)
+    #expect(edge(CGRect(x: 1395.7, y: 189.5, width: 109.3, height: 97.3), "right", true) == 1397.5)
+}
+
+@Test @MainActor func previewSitsOnTheLabelCentredOnTheIconAndStaysOnScreen() {
+    let screen = CGRect(x: 8, y: 8, width: 1496, height: 966)
     let size = CGSize(width: 440, height: 200)
-    let icon = CGRect(x: 500, y: 10, width: 48, height: 48)
-    let above = DockPreviewPanel.nameBubbleClearance(for: "Safari", edge: "bottom")
-    // Above a bottom Dock's name bubble, centred on the icon.
-    #expect(DockPreviewPanel.origin(for: size, beside: icon, edge: "bottom", clearance: above, within: screen)
-        == CGPoint(x: 304, y: 58 + above))
-    // Beside a side Dock, under the name bubble and lined up with its Dock-side end.
-    let gap = DockNameBubble.gap, bubble = DockNameBubble.height
-    let left = CGRect(x: 10, y: 400, width: 48, height: 48)
-    #expect(DockPreviewPanel.origin(for: size, beside: left, edge: "left", clearance: 0, within: screen)
-        == CGPoint(x: 58 + gap, y: 424 - bubble / 2 - gap - 200))
-    let right = CGRect(x: 1440, y: 400, width: 48, height: 48)
-    #expect(DockPreviewPanel.origin(for: size, beside: right, edge: "right", clearance: 0, within: screen).x
-        == 1440 - gap - 440)
-    // Near the bottom of the screen there's no room under the bubble, so it goes over it.
-    let low = CGRect(x: 10, y: 20, width: 48, height: 48)
-    #expect(DockPreviewPanel.origin(for: size, beside: low, edge: "left", clearance: 0, within: screen).y
-        == 44 + bubble / 2 + gap)
-    // An icon near the corner never pushes the preview off screen.
-    #expect(DockPreviewPanel.origin(for: size, beside: CGRect(x: 0, y: 10, width: 48, height: 48), edge: "bottom",
-                                    clearance: above, within: screen).x == 0)
+    let bottom = CGRect(x: 519.7, y: 931, width: 34, height: 46)
+    #expect(DockPreviewPanel.glassFrame(for: size, beside: bottom, edge: "bottom", magnified: false, scale: 2, within: screen)
+        == CGRect(x: 316.5, y: 729, width: 440, height: 200))
+    let left = CGRect(x: 5, y: 271.2, width: 46, height: 34)
+    #expect(DockPreviewPanel.glassFrame(for: size, beside: left, edge: "left", magnified: false, scale: 2, within: screen)
+        == CGRect(x: 56.5, y: 188, width: 440, height: 200))
+    let right = CGRect(x: 1459, y: 271.2, width: 46, height: 34)
+    #expect(DockPreviewPanel.glassFrame(for: size, beside: right, edge: "right", magnified: false, scale: 2, within: screen)
+        == CGRect(x: 1015.5, y: 188, width: 440, height: 200))
+    // Near a screen corner it moves along the Dock to stay on screen.
+    let corner = CGRect(x: 5, y: 900, width: 46, height: 34)
+    #expect(DockPreviewPanel.glassFrame(for: size, beside: corner, edge: "left", magnified: false, scale: 2, within: screen).maxY
+        == 974)
+    #expect(DockPreviewPanel.glassFrame(for: size, beside: CGRect(x: 10, y: 931, width: 34, height: 46), edge: "bottom",
+                                        magnified: false, scale: 2, within: screen).minX == 8)
+}
+
+@Test @MainActor func besideASideDockTheFirstCardIsCentredOnTheIcon() {
+    let screen = CGRect(x: 8, y: 41, width: 1496, height: 933)
+    let size = CGSize(width: 236, height: 362)
+    let icon = CGRect(x: 5, y: 400, width: 46, height: 34)
+    // The first card's centre, 90.5 points down the glass, sits on the icon's centre.
+    #expect(DockPreviewPanel.glassFrame(for: size, beside: icon, edge: "left", magnified: false, scale: 2, within: screen,
+                                        firstCardCentre: 90.5).minY == 417 - 90.5)
+    // Near the top of the screen it stays below the menu bar.
+    let high = CGRect(x: 5, y: 45, width: 46, height: 34)
+    #expect(DockPreviewPanel.glassFrame(for: size, beside: high, edge: "left", magnified: false, scale: 2, within: screen,
+                                        firstCardCentre: 90.5).minY == 41)
+}
+
+@Test func aWindowCardShowsTheWindowsOwnName() {
+    // An app that names every window after itself over accessibility.
+    #expect(DockWindows.title(accessibility: "Ardia", server: "Personal — youtube.com & 1 Tab", appName: "Ardia")
+        == "Personal — youtube.com & 1 Tab")
+    #expect(DockWindows.title(accessibility: "Notes.txt", server: "Other", appName: "TextEdit") == "Notes.txt")
+    #expect(DockWindows.title(accessibility: "", server: "Inbox", appName: "Mail") == "Inbox")
+    // Without Screen Recording the window server gives no name.
+    #expect(DockWindows.title(accessibility: "Ardia", server: "", appName: "Ardia") == "Ardia")
+    #expect(DockWindows.title(accessibility: nil, server: nil, appName: "Mail") == "")
 }
 
 @Test func onlyAPlainOptionClickOpensAFolderInFinder() {

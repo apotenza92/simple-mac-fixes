@@ -39,7 +39,7 @@ It replaces [Macsimize](https://github.com/apotenza92/macsimize), [Dockmint](htt
 - **Accessibility** (called Device Control on macOS 27): needed for every fix.
 - **Input Monitoring**: only for brightness keys on a separate keyboard while a MacBook is closed.
 - **System Audio Recording**: only for the volume keys on speakers and audio devices the Mac can't control. Sound stays on your Mac and is never recorded or saved.
-- **Screen Recording**: only for the pictures of your windows in Dock previews. Nothing is recorded or saved.
+- **Screen Recording**: only for the pictures and names of your windows in Dock previews. Nothing is recorded or saved.
 
 ## Build and run
 

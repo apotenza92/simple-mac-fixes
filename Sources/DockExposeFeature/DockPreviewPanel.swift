@@ -13,6 +13,10 @@ final class DockPreviewModel: ObservableObject {
     @Published var selected: CGWindowID?
     /// Beside a side Dock the cards run top to bottom.
     @Published var isVertical = false
+    /// Set when the cards are longer than the screen: they scroll, in this length.
+    @Published var scrollLength: CGFloat?
+    /// Counts previews opened, so each one's list starts scrolled to its first card.
+    @Published var visit = 0
     var choose: (DockWindow) -> Void = { _ in }
     /// The pointer reaching (true) or leaving (false) a window's card.
     var pointAt: (DockWindow, Bool) -> Void = { _, _ in }
@@ -38,13 +42,14 @@ final class DockPreviewPanel: NSPanel {
         super.init(contentRect: .zero, styleMask: [.nonactivatingPanel, .borderless],
                    backing: .buffered, defer: true)
         isFloatingPanel = true
-        // After isFloatingPanel, which resets the level. Above the Dock, and above our
-        // copy of its name bubble, so its shadow falls on the copy as on the original.
+        // After isFloatingPanel, which resets the level. Above the Dock.
         level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
         hidesOnDeactivate = false
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false
+        // The preview opens and closes at once, like the Dock's own menus.
+        animationBehavior = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         host.sizingOptions = [.intrinsicContentSize]
         contentView = host
@@ -56,70 +61,196 @@ final class DockPreviewPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    /// Places the panel clear of the Dock's own name bubble, on the side away from the
-    /// screen edge the Dock sits on, and keeps it on screen.
-    func show(beside icon: CGRect, edge: String, name: String) {
-        let vertical = edge == "left" || edge == "right"
-        if model.isVertical != vertical { model.isVertical = vertical }
+    /// The glass draws frosted in a window that is not key. Another app coming forward
+    /// while the preview shows (a window chosen by scrolling on the icon) takes key from
+    /// the panel, so the panel takes it back at once, before the frosted glass shows.
+    /// Taking it back inside this call does not hold; on the next turn it does, and the
+    /// frosted glass shows for 2 frames instead of 8.
+    override func resignKey() {
+        super.resignKey()
+        guard isVisible else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible, !self.isKeyWindow else { return }
+            self.makeKey()
+        }
+    }
+
+    /// Draws the panel once, off screen and see-through, so the first preview opens as
+    /// fast as later ones.
+    func prepare() {
+        // Two sample cards, so the cards' views, the glass and becoming key are all done once.
+        // Long names with punctuation, one of them selected, so text, its fallback fonts
+        // and the sliding name are all set up too.
+        model.windows = [
+            DockWindow(id: 1, processIdentifier: 0, title: "Personal — A long window name & 4 Tabs, too long to fit…",
+                       place: .here, bounds: .zero),
+            DockWindow(id: 2, processIdentifier: 0, title: "Window", place: .minimized, bounds: .zero),
+        ]
+        model.selected = 1
+        model.appIcon = NSApp.applicationIconImage
+        if let context = CGContext(data: nil, width: 400, height: 250, bitsPerComponent: 8, bytesPerRow: 0,
+                                   space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue),
+           let picture = context.makeImage() {
+            model.pictures = [1: picture, 2: picture]
+        }
         host.layoutSubtreeIfNeeded()
-        let size = host.fittingSize
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(Self.appKitPoint(CGPoint(x: icon.midX, y: icon.midY))) })
-            ?? NSScreen.main else { return }
-        // Accessibility frames are top-left based; AppKit is bottom-left.
-        let glassSize = CGSize(width: size.width - Self.margin * 2, height: size.height - Self.margin * 2)
-        let origin = Self.origin(for: glassSize, beside: Self.appKitRect(icon), edge: edge,
-                                 clearance: Self.nameBubbleClearance(for: name, edge: edge),
-                                 within: screen.frame.insetBy(dx: 8, dy: 8))
-        setFrame(CGRect(origin: origin, size: glassSize).insetBy(dx: -Self.margin, dy: -Self.margin), display: true)
+        alphaValue = 0
+        // On screen, though see-through: the window server makes an off-screen window key
+        // without the work an on-screen one needs.
+        let screen = NSScreen.main?.frame ?? .zero
+        setFrame(CGRect(x: screen.midX - 300, y: screen.minY + 100, width: 600, height: 300), display: true)
+        orderFrontRegardless()
+        makeKey()
+        display()
+        orderOut(nil)
+        alphaValue = 1
+        model.windows = []
+        model.selected = nil
+        model.pictures = [:]
+        model.appIcon = nil
+    }
+
+    /// Shows the panel over the Dock's name label for `icon`, on the side away from the
+    /// screen edge the Dock sits on.
+    func show(beside icon: CGRect, edge: String, magnified: Bool) {
+        place(beside: icon, edge: edge, magnified: magnified)
         orderFrontRegardless()
         makeKey()
     }
 
-    /// Space between the icon and a bottom Dock's preview: the name bubble's gap to
-    /// the icon, the bubble itself, then the same gap again, so both gaps match.
-    static func nameBubbleClearance(for name: String, edge: String) -> CGFloat {
-        DockNameBubble.gap * 2 + DockNameBubble.height
+    /// Moves the panel to where the Dock draws the name label for `icon` now. The label
+    /// follows the icon as magnification grows and shrinks it, so the panel does too.
+    func place(beside icon: CGRect, edge: String, magnified: Bool) {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        guard let screen = NSScreen.screens.first(where: {
+            $0.frame.contains(CGPoint(x: icon.midX, y: primaryHeight - icon.midY))
+        }) ?? NSScreen.main else { return }
+        // Accessibility frames are top-left based; AppKit is bottom-left.
+        var visible = screen.frame.insetBy(dx: 8, dy: 8)
+        // Never over the menu bar. The visible frame leaves the Dock out too, but the
+        // preview covers the Dock's name label, so only its top is used.
+        visible.size.height = min(visible.maxY, screen.visibleFrame.maxY - 8) - visible.minY
+        let visibleTopLeft = CGRect(x: visible.minX, y: primaryHeight - visible.maxY, width: visible.width, height: visible.height)
+        let vertical = edge == "left" || edge == "right"
+        fitToScreen(vertical: vertical, length: vertical ? visible.height : visible.width)
+        host.layoutSubtreeIfNeeded()
+        let size = host.fittingSize
+        let glassSize = CGSize(width: size.width - Self.margin * 2, height: size.height - Self.margin * 2)
+        let glass = Self.glassFrame(for: glassSize, beside: icon, edge: edge, magnified: magnified,
+                                    scale: screen.backingScaleFactor, within: visibleTopLeft,
+                                    firstCardCentre: firstCardCentre(glassLength: vertical ? glassSize.height : glassSize.width))
+        let appKitGlass = CGRect(x: glass.minX, y: primaryHeight - glass.maxY, width: glass.width, height: glass.height)
+        let target = appKitGlass.insetBy(dx: -Self.margin, dy: -Self.margin)
+        guard target != frame else { return }
+        setFrame(target, display: true)
     }
 
-    /// Above a bottom Dock's icon, centred on it and `clearance` away. Beside a side
-    /// Dock, under the name bubble that sits beside the icon, lined up with the
-    /// bubble's Dock-side end, or over the bubble when there's no room below. Kept
-    /// inside `visible`; all in AppKit's bottom-left coordinates.
-    static func origin(for size: CGSize, beside icon: CGRect, edge: String, clearance: CGFloat,
-                       within visible: CGRect) -> CGPoint {
-        let gap = DockNameBubble.gap, bubble = DockNameBubble.height
+    private var fitted: (count: Int, vertical: Bool, length: CGFloat)?
+
+    /// Lays the cards along the Dock's edge and, when they're longer than the screen,
+    /// makes them scroll. Only when the count, the edge or the screen changes, so a
+    /// scrolled list keeps its place while the preview follows the icon.
+    private func fitToScreen(vertical: Bool, length: CGFloat) {
+        let key = (count: model.windows.count, vertical: vertical, length: length)
+        if let fitted, fitted == key { return }
+        fitted = key
+        if model.isVertical != vertical { model.isVertical = vertical }
+        model.scrollLength = nil
+        host.layoutSubtreeIfNeeded()
+        let natural = host.fittingSize
+        let along = (vertical ? natural.height : natural.width) - Self.margin * 2
+        if along > length { model.scrollLength = length }
+    }
+
+    /// How far the first card's centre is from the glass's start along the cards, from
+    /// the glass's length when not scrolling: every card is the same size.
+    private func firstCardCentre(glassLength: CGFloat) -> CGFloat? {
+        let count = CGFloat(model.windows.count)
+        guard count > 0, model.scrollLength == nil else { return nil }
+        let card = (glassLength - Self.padding * 2 - Self.spacing * (count - 1)) / count
+        return Self.padding + card / 2
+    }
+
+    static let padding: CGFloat = 10
+    static let spacing: CGFloat = 10
+
+    /// A horizontal list scrolls with a plain mouse wheel too, as it does with Shift held.
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .scrollWheel, model.scrollLength != nil, !model.isVertical,
+           event.scrollingDeltaX == 0, event.scrollingDeltaY != 0,
+           let turned = event.cgEvent?.copy() {
+            for (from, to) in [(CGEventField.scrollWheelEventDeltaAxis1, CGEventField.scrollWheelEventDeltaAxis2),
+                               (.scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2),
+                               (.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2)] {
+                turned.setIntegerValueField(to, value: turned.getIntegerValueField(from))
+                turned.setDoubleValueField(to, value: turned.getDoubleValueField(from))
+                turned.setIntegerValueField(from, value: 0)
+                turned.setDoubleValueField(from, value: 0)
+            }
+            if let sideways = NSEvent(cgEvent: turned) { return super.sendEvent(sideways) }
+        }
+        super.sendEvent(event)
+    }
+
+    /// Where the Dock's name label for `icon` starts, on the side of the label nearest
+    /// the icon, its arrow included. Top-left coordinates, like `icon`.
+    ///
+    /// Measured from the macOS 27 Dock on every edge, at icon sizes 16 to 80 and with
+    /// magnification off and from 36 to 128. The label sits at a fixed distance from
+    /// the icon's accessibility frame, also while magnification is growing the icon;
+    /// that distance changes only when magnification is switched on or off. The Dock
+    /// puts the label on the screen's pixel grid; this rounds toward the icon, so the
+    /// preview always covers the whole label.
+    static func labelEdge(beside icon: CGRect, edge: String, magnified: Bool, scale: CGFloat) -> CGFloat {
+        let scale = max(scale, 1)
+        switch edge {
+        case "left":
+            return floor((icon.maxX + (magnified ? 0.5 : 5.5)) * scale) / scale
+        case "right":
+            return ceil((icon.minX + (magnified ? 1.5 : -3.5)) * scale) / scale
+        default:
+            // The arrow's tip. A bottom Dock's frame is taller than the icon by 12 points,
+            // or by 16 from icon size 48; magnified, the tip sits a quarter of that, plus
+            // 4 points, inside the frame.
+            let extra = icon.height - icon.width
+            return ceil((icon.minY + (magnified ? 4 + extra / 4 : -2)) * scale) / scale
+        }
+    }
+
+    /// The glass, with its edge nearest the Dock on the label's start, so it covers the
+    /// label exactly. Above a bottom Dock it's centred on the icon; beside a side Dock
+    /// the first card is, at `firstCardCentre` from the glass's top (the glass's middle
+    /// when nil). Kept inside `visible`; top-left coordinates.
+    static func glassFrame(for size: CGSize, beside icon: CGRect, edge: String, magnified: Bool, scale: CGFloat,
+                           within visible: CGRect, firstCardCentre: CGFloat? = nil) -> CGRect {
+        let start = labelEdge(beside: icon, edge: edge, magnified: magnified, scale: scale)
+        let top = icon.midY - (firstCardCentre ?? size.height / 2)
         var origin: CGPoint
         switch edge {
-        case "left", "right":
-            let x = edge == "left" ? icon.maxX + gap : icon.minX - gap - size.width
-            let below = icon.midY - bubble / 2 - gap - size.height
-            origin = CGPoint(x: x, y: below >= visible.minY ? below : icon.midY + bubble / 2 + gap)
-        default: origin = CGPoint(x: icon.midX - size.width / 2, y: icon.maxY + clearance)
+        case "left": origin = CGPoint(x: start, y: top)
+        case "right": origin = CGPoint(x: start - size.width, y: top)
+        default: origin = CGPoint(x: icon.midX - size.width / 2, y: start - size.height)
+        }
+        // Whole pixels across the Dock too, so the glass's edges stay sharp.
+        let scale = max(scale, 1)
+        switch edge {
+        case "left", "right": origin.y = (origin.y * scale).rounded() / scale
+        default: origin.x = (origin.x * scale).rounded() / scale
         }
         origin.x = min(max(origin.x, visible.minX), visible.maxX - size.width)
         origin.y = min(max(origin.y, visible.minY), visible.maxY - size.height)
-        return origin
-    }
-
-    private static func appKitRect(_ rect: CGRect) -> CGRect {
-        let height = NSScreen.screens.first?.frame.height ?? 0
-        return CGRect(x: rect.minX, y: height - rect.maxY, width: rect.width, height: rect.height)
-    }
-
-    private static func appKitPoint(_ point: CGPoint) -> CGPoint {
-        CGPoint(x: point.x, y: (NSScreen.screens.first?.frame.height ?? 0) - point.y)
+        return CGRect(origin: origin, size: size)
     }
 }
 
 struct DockPreviewView: View {
     @ObservedObject var model: DockPreviewModel
 
-    /// The Dock's own name bubble already names the app, so the preview doesn't.
-    var body: some View {
+    private var cards: some View {
         let layout = model.isVertical
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 10))
-        layout {
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: DockPreviewPanel.spacing))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: DockPreviewPanel.spacing))
+        return layout {
             ForEach(model.windows) { window in
                 WindowCard(window: window, picture: model.pictures[window.id], appIcon: model.appIcon,
                            isSelected: model.selected == window.id,
@@ -128,10 +259,37 @@ struct DockPreviewView: View {
                            control: { model.control($0, window) }) {
                     model.choose(window)
                 }
+                .id(window.id)
             }
         }
-        .padding(10)
-        .fixedSize()
+    }
+
+    /// The cards run along the Dock's edge: in a row above a bottom Dock, in a column
+    /// beside a side Dock. When they're longer than the screen they scroll.
+    var body: some View {
+        Group {
+            if let length = model.scrollLength {
+                ScrollViewReader { proxy in
+                    ScrollView(model.isVertical ? .vertical : .horizontal) {
+                        cards.padding(DockPreviewPanel.padding)
+                    }
+                    // No scroll bar: the panel keeps its plain glass look, and the cards past
+                    // its end show that there is more.
+                    .scrollIndicators(.never)
+                    .id(model.visit)
+                    .frame(width: model.isVertical ? nil : length, height: model.isVertical ? length : nil)
+                    .fixedSize(horizontal: model.isVertical, vertical: !model.isVertical)
+                    // Cards scrolling past the rounded corners stay inside the glass.
+                    .clipShape(RoundedRectangle(cornerRadius: DockPreviewPanel.cornerRadius, style: .continuous))
+                    // A card picked by scrolling on the Dock icon comes into view.
+                    .onChange(of: model.selected) { _, selected in
+                        if let selected { proxy.scrollTo(selected) }
+                    }
+                }
+            } else {
+                cards.padding(DockPreviewPanel.padding).fixedSize()
+            }
+        }
         .modifier(PanelGlass(cornerRadius: DockPreviewPanel.cornerRadius))
         // The panel is key only so its glass stays clear; nothing in it takes keyboard focus.
         .focusEffectDisabled()
@@ -139,17 +297,59 @@ struct DockPreviewView: View {
     }
 }
 
-/// The system's regular glass, untouched; a material on systems without it.
+/// The Dock's own glass behind the cards, so the preview reads as part of the Dock; the
+/// system's regular glass where that isn't available, and a material before glass.
 private struct PanelGlass: ViewModifier {
     let cornerRadius: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
+            if DockGlass.isAvailable {
+                content.background { veil(shape) }.background(DockGlass(cornerRadius: cornerRadius))
+            } else {
+                content.background { veil(shape) }.glassEffect(.regular, in: shape)
+            }
         } else {
-            content.background(.ultraThinMaterial, in: shape)
+            content.background { veil(shape) }.background(.ultraThinMaterial, in: shape)
         }
+    }
+
+    /// The Dock's glass, made calmer so that every name meets the WCAG AA contrast of
+    /// 4.5 : 1 on any desktop: a white veil in light mode and a black one in dark mode.
+    /// Measured over seven solid colours behind the preview, the worst cases were a black
+    /// desktop in light mode (5.0 : 1) and a white one in dark mode (5.0 : 1 selected,
+    /// 5.7 : 1 for the others). The glass is already solid with Reduce Transparency, so it
+    /// gets none.
+    @ViewBuilder
+    private func veil(_ shape: RoundedRectangle) -> some View {
+        if !reduceTransparency {
+            shape.fill(colorScheme == .dark ? Color.black.opacity(0.5) : Color.white.opacity(0.44))
+        }
+    }
+}
+
+/// The glass the Dock bar is made of. AppKit's glass view has private variants for the
+/// system's own surfaces; variant 3 matched the Dock bar exactly, measured over solid
+/// colours (every channel the same value) and over a pattern (the same blur).
+@available(macOS 26.0, *)
+private struct DockGlass: NSViewRepresentable {
+    static let dockVariant = 3
+    static let isAvailable = NSGlassEffectView.instancesRespond(to: NSSelectorFromString("set_variant:"))
+
+    let cornerRadius: CGFloat
+
+    func makeNSView(context: Context) -> NSGlassEffectView {
+        let view = NSGlassEffectView()
+        view.setValue(Self.dockVariant, forKey: "_variant")
+        view.cornerRadius = cornerRadius
+        return view
+    }
+
+    func updateNSView(_ view: NSGlassEffectView, context: Context) {
+        view.cornerRadius = cornerRadius
     }
 }
 
@@ -162,61 +362,62 @@ private struct WindowCard: View {
     let pointAt: (Bool) -> Void
     let control: (DockWindows.Control) -> Void
     let action: () -> Void
-    @State private var hovering = false
-
-    private static let pictureSize = CGSize(width: 200, height: 125)
+    /// The size of Safari's preview of a tab, measured on screen.
+    static let size = CGSize(width: 280, height: 218)
+    /// One inset for everything, the same as the panel's padding and the space between
+    /// cards: the buttons are this far from the card's top and left edges, the name from
+    /// its right edge, and the picture from its sides, its bottom and the row above it.
+    static let padding = DockPreviewPanel.padding
+    /// Concentric with the panel's corners.
+    static let cornerRadius = DockPreviewPanel.cornerRadius - padding
+    /// As tall as the buttons; the name is centred on them.
+    private static let rowHeight = WindowButtonGroup.size.height
+    private static let inner = CGSize(width: size.width - 2 * padding, height: size.height - 2 * padding)
+    private static let pictureSize = CGSize(width: inner.width, height: inner.height - rowHeight - padding)
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    ScrollingName(text: window.title.isEmpty ? "Window" : window.title, isScrolling: isSelected)
-                    if let place = placeText {
-                        Text(place)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize()
+            VStack(alignment: .leading, spacing: Self.padding) {
+                HStack(spacing: 8) {
+                    // Always in the same spot: the window's own buttons, in colour on the
+                    // selected card and in the system's grey on the others.
+                    if DockWindows.hasControls(window) {
+                        WindowButtons(isActive: isSelected, isMinimized: window.place == .minimized, perform: control)
+                            .frame(width: WindowButtonGroup.size.width, height: WindowButtonGroup.size.height)
                     }
+                    ScrollingName(text: window.title.isEmpty ? "Window" : window.title, isScrolling: isSelected)
+                        .modifier(DockLabel())
                 }
-                .frame(width: Self.pictureSize.width)
-                ZStack {
+                .frame(width: Self.inner.width, height: Self.rowHeight)
+                // At the top, so the gap under the name row is always the same.
+                ZStack(alignment: .top) {
                     if let picture {
                         Image(decorative: picture, scale: 2)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            // No clip: the capture has the window's own corners, and a
+                            // fixed radius cut them off at this scale.
                             .opacity(window.place == .here ? 1 : 0.6)
                     } else if let appIcon {
                         Image(nsImage: appIcon).resizable().frame(width: 48, height: 48).opacity(0.8)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
-                .frame(width: Self.pictureSize.width, height: Self.pictureSize.height)
-                .overlay(alignment: .topLeading) {
-                    if hovering, DockWindows.hasControls(window) {
-                        WindowControls(isMinimized: window.place == .minimized, perform: control)
-                            .padding(6)
-                            .transition(.opacity)
-                    }
+                .transaction { transaction in
+                    // The picture replaces the app's icon at once, with no fade.
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
                 }
+                .frame(width: Self.pictureSize.width, height: Self.pictureSize.height, alignment: .top)
             }
-            .padding(8)
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .padding(Self.padding)
+            .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         }
         .buttonStyle(CardGlassStyle(isHighlighted: isSelected))
         .focusable(false)
         .onHover { isHovering in
-            withAnimation(.easeOut(duration: 0.12)) { hovering = isHovering }
             if isHovering { select() }
             pointAt(isHovering)
-        }
-    }
-
-    private var placeText: String? {
-        switch window.place {
-        case .here: nil
-        case .minimized: "Minimized"
-        case .hidden: "Hidden"
-        case let .otherDesktop(number, _): number.map { "Space \($0)" } ?? "Full Screen"
         }
     }
 }
@@ -234,146 +435,131 @@ private struct CardGlassStyle: ButtonStyle {
     }
 }
 
+/// The selected card: the whole card in the glass of the Dock's name label.
 private struct CardGlass: View {
     let isPressed: Bool
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-        if #available(macOS 26.0, *) {
-            Color.clear.glassEffect(.regular, in: shape)
-        } else {
-            shape.fill(isPressed ? .thinMaterial : .ultraThinMaterial)
-        }
+        Color.clear.modifier(DockLabelGlass(shape: RoundedRectangle(cornerRadius: WindowCard.cornerRadius, style: .continuous)))
     }
 }
 
-/// Close, minimize and maximize, drawn like a window's own buttons: see-through
-/// until the pointer reaches them, then solid with symbols.
-private struct WindowControls: View {
+/// The window's own close, minimize and maximize buttons: AppKit's real ones, so they
+/// look and act exactly like a window's, symbols on hover included.
+private struct WindowButtons: NSViewRepresentable {
+    let isActive: Bool
     let isMinimized: Bool
     let perform: (DockWindows.Control) -> Void
-    @State private var hovering = false
 
-    var body: some View {
-        HStack(spacing: 9) {
-            TrafficLight(style: .close, symbol: .close, label: "Close", isSolid: hovering) { perform(.close) }
-            TrafficLight(style: .minimize, symbol: .minimize, label: "Minimize", isSolid: hovering) { perform(.minimize) }
-                .disabled(isMinimized)
-                .opacity(isMinimized ? 0.4 : 1)
-            TrafficLight(style: .zoom, symbol: .zoom, label: "Maximize", isSolid: hovering) { perform(.maximize) }
-        }
-        .padding(2)
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+    func makeNSView(context: Context) -> WindowButtonGroup { WindowButtonGroup() }
+
+    func updateNSView(_ group: WindowButtonGroup, context: Context) {
+        group.perform = perform
+        group.update(isActive: isActive, isMinimized: isMinimized)
     }
 }
 
-private struct TrafficLight: View {
-    /// Colours read from the system's own buttons: deeper at the top, lighter at
-    /// the bottom, with a thin darker rim.
-    enum Style {
-        case close, minimize, zoom
+/// Holds the three buttons as a window's title bar does. A window's buttons show their
+/// symbols while the pointer is over any of them: each asks its superview
+/// `_mouseInGroup:`, and is told to look again with `mouseEnteredOrExited`. A disabled
+/// button draws in the grey of a window in the background, so the other cards use that.
+final class WindowButtonGroup: NSView {
+    /// Three 14-point buttons 9 points apart, as in a window's title bar.
+    static let size = CGSize(width: 14 * 3 + 9 * 2, height: 14)
+    private static let controls: [(NSWindow.ButtonType, DockWindows.Control)] = [
+        (.closeButton, .close), (.miniaturizeButton, .minimize), (.zoomButton, .maximize),
+    ]
+    private static let lookAgain = NSSelectorFromString("mouseEnteredOrExited")
 
-        var top: Color {
-            switch self {
-            case .close: Color(red: 0.937, green: 0.514, blue: 0.439)
-            case .minimize: Color(red: 0.953, green: 0.745, blue: 0.247)
-            case .zoom: Color(red: 0.467, green: 0.769, blue: 0.196)
-            }
-        }
+    var perform: (DockWindows.Control) -> Void = { _ in }
+    private var buttons: [NSButton] = []
+    private var pointerInside = false
 
-        var bottom: Color {
-            switch self {
-            case .close: Color(red: 0.914, green: 0.592, blue: 0.541)
-            case .minimize: Color(red: 0.973, green: 0.835, blue: 0.325)
-            case .zoom: Color(red: 0.655, green: 0.835, blue: 0.506)
-            }
-        }
-
-        var rim: Color {
-            switch self {
-            case .close: Color(red: 0.831, green: 0.400, blue: 0.325)
-            case .minimize: Color(red: 0.796, green: 0.584, blue: 0.125)
-            case .zoom: Color(red: 0.404, green: 0.624, blue: 0.235)
-            }
-        }
-    }
-
-    /// Drawn rather than taken from a font, so each sits exactly in the middle.
-    enum Symbol {
-        case close, minimize, zoom
-
-        var path: Path {
-            Path { path in
-                let c = TrafficLight.diameter / 2, r: CGFloat = 3
-                switch self {
-                case .close:
-                    path.move(to: CGPoint(x: c - r, y: c - r)); path.addLine(to: CGPoint(x: c + r, y: c + r))
-                    path.move(to: CGPoint(x: c + r, y: c - r)); path.addLine(to: CGPoint(x: c - r, y: c + r))
-                case .minimize:
-                    path.move(to: CGPoint(x: c - r - 0.5, y: c)); path.addLine(to: CGPoint(x: c + r + 0.5, y: c))
-                case .zoom:
-                    path.move(to: CGPoint(x: c - r - 0.5, y: c)); path.addLine(to: CGPoint(x: c + r + 0.5, y: c))
-                    path.move(to: CGPoint(x: c, y: c - r - 0.5)); path.addLine(to: CGPoint(x: c, y: c + r + 0.5))
-                }
-            }
+    init() {
+        super.init(frame: CGRect(origin: .zero, size: Self.size))
+        for (index, (type, _)) in Self.controls.enumerated() {
+            guard let button = NSWindow.standardWindowButton(type, for: [.titled, .closable, .miniaturizable, .resizable])
+            else { continue }
+            button.setFrameOrigin(CGPoint(x: CGFloat(index) * 23, y: 0))
+            button.tag = index
+            button.target = self
+            button.action = #selector(pressed(_:))
+            addSubview(button)
+            buttons.append(button)
         }
     }
 
-    let style: Style
-    let symbol: Symbol
-    let label: String
-    let isSolid: Bool
-    let action: () -> Void
+    required init?(coder: NSCoder) { nil }
 
-    static let diameter: CGFloat = 14
+    override var intrinsicContentSize: NSSize { Self.size }
 
-    var body: some View {
-        Button(action: action) {
-            EmptyView()
+    func update(isActive: Bool, isMinimized: Bool) {
+        var changed = false
+        for button in buttons {
+            let enabled = isActive && !(Self.controls[button.tag].1 == .minimize && isMinimized)
+            if button.isEnabled != enabled { button.isEnabled = enabled; changed = true }
         }
-        .buttonStyle(LightStyle(style: style, symbol: symbol, isSolid: isSolid))
-        .focusable(false)
-        .frame(width: Self.diameter, height: Self.diameter)
-        .accessibilityLabel(label)
+        if changed { lookAgain() }
     }
-}
 
-/// One circle for both states, so a button never changes size: see-through with a
-/// light sheen at rest, solid with its symbol under the pointer, and lit up
-/// while pressed, as the window's own buttons are.
-private struct LightStyle: ButtonStyle {
-    let style: TrafficLight.Style
-    let symbol: TrafficLight.Symbol
-    let isSolid: Bool
+    @objc private func pressed(_ sender: NSButton) {
+        perform(Self.controls[sender.tag].1)
+    }
 
-    func makeBody(configuration: Configuration) -> some View {
-        Circle()
-            .fill(LinearGradient(colors: [style.top, style.bottom], startPoint: .top, endPoint: .bottom))
-            .opacity(isSolid ? 1 : 0.55)
-            .overlay {
-                Circle().fill(LinearGradient(colors: [.white.opacity(0.35), .clear], startPoint: .top, endPoint: .center))
-                    .opacity(isSolid ? 0 : 1)
-            }
-            // Pressed, a button brightens past normal white where the screen allows,
-            // the way the window's own buttons light up.
-            .overlay {
-                Circle().fill(Color(.sRGBLinear, white: 1, opacity: configuration.isPressed ? 0.45 : 0))
-                    .blendMode(.plusLighter)
-            }
-            .overlay { Circle().strokeBorder(style.rim.opacity(isSolid ? 1 : 0.6), lineWidth: 0.5) }
-            .overlay {
-                symbol.path
-                    .stroke(.black.opacity(0.55), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
-                    .opacity(isSolid ? 1 : 0)
-            }
-            .contentShape(Circle())
-            .allowedDynamicRange(.high)
+    @objc func _mouseInGroup(_ button: NSButton) -> Bool { pointerInside }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { pointerInside = true; lookAgain() }
+    override func mouseExited(with event: NSEvent) { pointerInside = false; lookAgain() }
+
+    private func lookAgain() {
+        for button in buttons where button.responds(to: Self.lookAgain) { button.perform(Self.lookAgain) }
     }
 }
 
 /// A one-line name that ends in "…" when it doesn't fit, and while hovered
 /// slides across to show the rest, pauses, then slides back, until the pointer leaves.
+/// The glass of the Dock's own name label, in any shape.
+///
+/// The Dock's label sits on the desktop; this sits on the preview's Dock glass. Clear
+/// glass with a light tint in light mode comes out like the Dock's label: measured over
+/// solid colours behind both, within 5 levels on average. In dark mode the tint is black
+/// 0.16, darker than the Dock's label (0.06 matched it), so that the selected name keeps
+/// 4.5 : 1 on a white desktop while the card stays lighter than the others.
+///
+/// With Reduce Transparency on, the Dock draws its label almost solid, and plain regular
+/// glass, which goes solid the same way, matches it within 2 levels.
+private struct DockLabelGlass<S: Shape>: ViewModifier {
+    let shape: S
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            let tint = colorScheme == .dark ? Color.black.opacity(0.16) : Color.white.opacity(0.32)
+            content.glassEffect(reduceTransparency ? .regular : .clear.tint(tint), in: shape)
+        } else {
+            content.background(.ultraThinMaterial, in: shape)
+        }
+    }
+}
+
+/// A window's name with the Dock name label's text: 14-point system text in the standard
+/// label colour, at the right of the title row, as far in from the end as the window's
+/// buttons are from the start. The selected card is in the label's
+/// glass as a whole; on the other cards the name sits on the Dock glass alone. The room
+/// is the same either way, so nothing moves as the selection changes.
+private struct DockLabel: ViewModifier {
+    func body(content: Content) -> some View {
+        content.frame(maxWidth: .infinity, alignment: .trailing)
+    }
+}
+
 private struct ScrollingName: View {
     let text: String
     let isScrolling: Bool
@@ -393,7 +579,7 @@ private struct ScrollingName: View {
         // off at its edges, so a long name never reaches past its own card.
         label.lineLimit(1).truncationMode(.tail)
             .opacity(scrolling ? 0 : 1)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(alignment: .leading)
             .overlay(alignment: .leading) {
                 if scrolling { label.fixedSize().offset(x: offset) }
             }
@@ -427,8 +613,10 @@ private struct ScrollingName: View {
         }
     }
 
+    /// The Dock's own name label: the 14-point system font, regular, in the standard label
+    /// colour, measured from the Dock on screen. The same on every card, selected or not.
     private var label: some View {
-        Text(text).font(.callout)
+        Text(text).font(.system(size: 14))
     }
 }
 
