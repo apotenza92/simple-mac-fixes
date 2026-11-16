@@ -38,6 +38,14 @@ ditto "${repo_dir}/Resources/Licenses" "${app_dir}/Contents/Resources/Licenses"
 # Ship PermissionFlow's localized helper resources in the installed app.
 ditto "${build_dir}/PermissionFlow_PermissionFlow.bundle" "${app_dir}/Contents/Resources/PermissionFlow_PermissionFlow.bundle"
 cp "${build_dir}/SimpleMacFixes" "${app_dir}/Contents/MacOS/SimpleMacFixes"
+# AppKit draws some controls (the window buttons in Dock previews among them) in the
+# style of the SDK the app was linked against. SwiftPM's new build system starts the
+# linker without the SDK in its environment, so the linker writes the deployment
+# target as the SDK, and AppKit then draws the old flat style. Write the real SDK.
+executable="${app_dir}/Contents/MacOS/SimpleMacFixes"
+minimum_macos="$(otool -l "${executable}" | awk '/LC_BUILD_VERSION/ {found = 1} found && $1 == "minos" {print $2; exit}')"
+sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+xcrun vtool -set-build-version macos "${minimum_macos}" "${sdk_version}" -replace -output "${executable}" "${executable}"
 
 plist="${app_dir}/Contents/Info.plist"
 cp "${repo_dir}/Resources/Info.plist" "${plist}"
