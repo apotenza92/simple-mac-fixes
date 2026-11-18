@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The card under the pointer plays live, and so does its window when it is shown in place: a
+/// The card under the pointer plays live, and so does its window when it is shown in place (also
+/// the selected window, shown in place while the pointer is on the Dock icon): a
 /// video that plays in the window plays there too. Every other card keeps the picture it had
 /// when the preview opened, so a card costs nothing until the pointer is on it.
 ///
@@ -29,7 +30,11 @@ final class LiveWindow {
     /// frame about 5 times smaller, and a quarter of the pixels is less for the window
     /// server to draw. A capture takes the same time at either resolution.
     var shownInPlace: CGWindowID? {
-        didSet { updateResolution() }
+        didSet {
+            updateResolution()
+            // Shown in place with the pointer on the Dock icon, it plays too.
+            if shownInPlace != oldValue, hovered == nil { retarget() }
+        }
     }
 
     /// The card the pointer is on.
@@ -74,7 +79,7 @@ final class LiveWindow {
     }
 
     private func retarget() {
-        let id = Self.choose(hovered: hovered, windows: isRunning ? model.windows : [])
+        let id = Self.choose(hovered: hovered ?? shownInPlace, windows: isRunning ? model.windows : [])
         guard id != target else { return }
         finish()
         guard let id else { return }
@@ -87,8 +92,8 @@ final class LiveWindow {
         loop.full = target != nil && shownInPlace == target
     }
 
-    /// The window to play: the one under the pointer, if it is on this desktop. A window
-    /// elsewhere shows its last picture.
+    /// The window to play: the one under the pointer, or else the one shown in place, if it
+    /// is on this desktop. A window elsewhere shows its last picture.
     nonisolated static func choose(hovered: CGWindowID?, windows: [DockWindow]) -> CGWindowID? {
         guard let hovered, windows.contains(where: { $0.id == hovered && $0.place == .here }) else { return nil }
         return hovered
@@ -110,11 +115,13 @@ final class LiveWindow {
             let still = ImageHolder(image: WindowThumbnails.scaled(frame, toFit: WindowThumbnails.maximumPixels))
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self, let image = still.image else { return }
-                    self.thumbnails.remember(image, for: id)
-                    guard self.model.visit == visit else { return }
-                    self.model.pictures[id] = image
-                    // Only now, so the card never shows an older picture in between.
+                    guard let self else { return }
+                    if let image = still.image {
+                        self.thumbnails.remember(image, for: id)
+                        if self.model.visit == visit { self.model.pictures[id] = image }
+                    }
+                    // Only now, so the card never shows an older picture in between; and also
+                    // when another preview opened meanwhile, so no old frame stays behind.
                     if let feed, self.model.live[id] === feed { self.model.live[id] = nil }
                 }
             }

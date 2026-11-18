@@ -72,16 +72,69 @@ final class DockPreviewPanel: NSPanel {
     /// frosted glass shows for 2 frames instead of 8.
     override func resignKey() {
         super.resignKey()
-        guard isVisible else { return }
+        guard isShown else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.isVisible, !self.isKeyWindow else { return }
+            guard let self, self.isShown, !self.isKeyWindow else { return }
             self.makeKey()
         }
+    }
+
+    /// The preview shows. The window can still be on screen, see-through, for a moment
+    /// after it closes (`close(animated:keepFor:)`).
+    private(set) var isShown = false
+    /// A key was pressed while the preview shows: it closes.
+    var keyPressed: () -> Void = {}
+    private var orderOutWork: DispatchWorkItem?
+    /// Closed, but kept on screen see-through for the next preview.
+    private var isKept = false
+    /// Counts shows and closes, so a fade that ends after the preview came back leaves it up.
+    private var turn = 0
+
+    /// Closes the preview. Taking the window off screen and making it key again cost
+    /// 10–25 ms each time, so while the pointer stays on the Dock, where the next preview
+    /// often opens a moment later, the window stays for `keepFor` seconds, see-through and
+    /// letting clicks through, and only shows again. It is still key then, so it goes as soon
+    /// as the pointer leaves the Dock (`orderOutIfClosed`), so keys typed after go elsewhere.
+    func close(animated: Bool, keepFor: TimeInterval) {
+        guard isShown else { return }
+        isShown = false
+        isKept = keepFor > 0 && !animated
+        turn += 1
+        let turn = turn
+        ignoresMouseEvents = true
+        if animated {
+            // The system's fade for a utility panel as it closes; it opens at once.
+            NSAnimationContext.runAnimationGroup { _ in animator().alphaValue = 0 }
+        } else {
+            alphaValue = 0
+        }
+        orderOutWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.turn == turn else { return }
+            self.orderOutIfClosed()
+        }
+        orderOutWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(keepFor, animated ? 0.3 : 0), execute: work)
+    }
+
+    /// Takes a closed preview's window off screen.
+    func orderOutIfClosed() {
+        orderOutWork?.cancel()
+        orderOutWork = nil
+        isKept = false
+        guard !isShown, isVisible else { return }
+        orderOut(nil)
+    }
+
+    /// Takes a window kept for the next preview off screen; a closing fade finishes first.
+    func orderOutIfKept() {
+        if isKept { orderOutIfClosed() }
     }
 
     /// Draws the panel once, off screen and see-through, so the first preview opens as
     /// fast as later ones.
     func prepare() {
+        WindowButtonGroup.makeSpare(8)
         // Two sample cards, so the cards' views, the glass and becoming key are all done once.
         // Long names with punctuation, one of them selected, so text, its fallback fonts
         // and the sliding name are all set up too.
@@ -118,10 +171,26 @@ final class DockPreviewPanel: NSPanel {
     /// screen edge the Dock sits on.
     func show(beside icon: CGRect, edge: String, magnified: Bool) {
         place(beside: icon, edge: edge, magnified: magnified)
-        // The system's fade as it opens and closes, as for a utility panel, or none.
-        animationBehavior = model.animates ? .utilityWindow : .none
-        orderFrontRegardless()
-        makeKey()
+        orderOutWork?.cancel()
+        orderOutWork = nil
+        if isVisible, alphaValue < 1 {
+            // A kept window still holds the last preview's cards: draw the new ones first, so
+            // they do not show for a frame. A new frame drew them already.
+            contentView?.layoutSubtreeIfNeeded()
+            displayIfNeeded()
+        }
+        isKept = false
+        isShown = true
+        turn += 1
+        ignoresMouseEvents = false
+        // At once, also over a fade that is still closing it.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            animator().alphaValue = 1
+        }
+        alphaValue = 1
+        if !isVisible { orderFrontRegardless() }
+        if !isKeyWindow { makeKey() }
     }
 
     /// Moves the panel to where the Dock draws the name label for `icon` now. The label
@@ -139,9 +208,9 @@ final class DockPreviewPanel: NSPanel {
         let visibleTopLeft = CGRect(x: visible.minX, y: primaryHeight - visible.maxY, width: visible.width, height: visible.height)
         let vertical = edge == "left" || edge == "right"
         fitToScreen(vertical: vertical, length: vertical ? visible.height : visible.width)
-        host.layoutSubtreeIfNeeded()
-        let size = host.fittingSize
-        let glassSize = CGSize(width: size.width - Self.margin * 2, height: size.height - Self.margin * 2)
+        // From the cards' fixed size, not from a layout: SwiftUI then lays the cards out
+        // once, as the panel draws, instead of first to measure them.
+        let glassSize = glassSize(count: model.windows.count, vertical: vertical, scrollLength: model.scrollLength)
         let glass = Self.glassFrame(for: glassSize, beside: icon, edge: edge, magnified: magnified,
                                     scale: screen.backingScaleFactor, within: visibleTopLeft,
                                     firstCardCentre: firstCardCentre(glassLength: vertical ? glassSize.height : glassSize.width))
@@ -161,11 +230,22 @@ final class DockPreviewPanel: NSPanel {
         if let fitted, fitted == key { return }
         fitted = key
         if model.isVertical != vertical { model.isVertical = vertical }
-        model.scrollLength = nil
-        host.layoutSubtreeIfNeeded()
-        let natural = host.fittingSize
-        let along = (vertical ? natural.height : natural.width) - Self.margin * 2
-        if along > length { model.scrollLength = length }
+        let natural = glassSize(count: model.windows.count, vertical: vertical, scrollLength: nil)
+        let along = vertical ? natural.height : natural.width
+        let scrollLength: CGFloat? = along > length ? length : nil
+        if model.scrollLength != scrollLength { model.scrollLength = scrollLength }
+    }
+
+    /// The glass around `count` cards in a row, or a column beside a side Dock: every card
+    /// is the same size, with the same gaps. Along the cards it is `scrollLength` when
+    /// they scroll.
+    private func glassSize(count: Int, vertical: Bool, scrollLength: CGFloat?) -> CGSize {
+        let card = WindowCard.size
+        let n = CGFloat(max(count, 1))
+        let along = (vertical ? card.height : card.width) * n + Self.spacing * (n - 1) + Self.padding * 2
+        let across = (vertical ? card.width : card.height) + Self.padding * 2
+        let length = scrollLength ?? along
+        return vertical ? CGSize(width: across, height: length) : CGSize(width: length, height: across)
     }
 
     /// How far the first card's centre is from the glass's start along the cards, from
@@ -182,6 +262,27 @@ final class DockPreviewPanel: NSPanel {
 
     /// A horizontal list scrolls with a plain mouse wheel too, as it does with Shift held.
     override func sendEvent(_ event: NSEvent) {
+        // The panel is key only so its glass stays clear, and nothing in it takes typing,
+        // so keys belong to the app in use. A key pressed while the preview shows closes it;
+        // modifier keys alone do not, since Option-click on a green button enters full screen.
+        // Then the window goes, which gives the keyboard back to that app, and the key is
+        // sent on to it, so none is lost. Each key after reaches that app directly.
+        if isShown, event.type == .keyDown { keyPressed() }
+        if !isShown, [.keyDown, .keyUp, .flagsChanged].contains(event.type) {
+            orderOutIfClosed()
+            if let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid(),
+               let key = event.cgEvent?.copy() {
+                // To the app itself: sent back through the system, a key could reach this
+                // window again before it let the keyboard go, and arrive after the next key.
+                key.postToPid(app.processIdentifier)
+                return
+            }
+            // This app is in use, with Settings open: its window has the keyboard back now.
+            if let window = NSApp.keyWindow, window !== self {
+                window.sendEvent(event)
+                return
+            }
+        }
         if event.type == .scrollWheel, model.scrollLength != nil, !model.isVertical,
            event.scrollingDeltaX == 0, event.scrollingDeltaY != 0,
            let turned = event.cgEvent?.copy() {
@@ -252,12 +353,18 @@ final class DockPreviewPanel: NSPanel {
 struct DockPreviewView: View {
     @ObservedObject var model: DockPreviewModel
 
+    /// Its own kind of name, apart from the scroll view's own (the preview's count).
+    static func cardID(_ index: Int) -> String { "card \(index)" }
+
     private var cards: some View {
         let layout = model.isVertical
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: DockPreviewPanel.spacing))
             : AnyLayout(HStackLayout(alignment: .top, spacing: DockPreviewPanel.spacing))
         return layout {
-            ForEach(model.windows) { window in
+            // Cards are known by their place, not by their window, so the next app's
+            // preview reuses them and only changes what they show. New cards for every app,
+            // with their glass, buttons and text, took most of the 15–30 ms to open one.
+            ForEach(Array(model.windows.enumerated()), id: \.offset) { index, window in
                 WindowCard(window: window, picture: model.pictures[window.id], live: model.live[window.id],
                            appIcon: model.appIcon, animates: model.animates,
                            isSelected: model.selected == window.id,
@@ -266,7 +373,7 @@ struct DockPreviewView: View {
                            control: { model.control($0, window) }) {
                     model.choose(window)
                 }
-                .id(window.id)
+                .id(Self.cardID(index))
             }
         }
     }
@@ -291,7 +398,8 @@ struct DockPreviewView: View {
                     // A card picked by scrolling on the Dock icon comes into view.
                     .onChange(of: model.selected) { _, selected in
                         guard let selected else { return }
-                        withAnimation(model.animates ? .default : nil) { proxy.scrollTo(selected) }
+                        guard let index = model.windows.firstIndex(where: { $0.id == selected }) else { return }
+                        withAnimation(model.animates ? .default : nil) { proxy.scrollTo(Self.cardID(index)) }
                     }
                 }
             } else {
@@ -400,11 +508,14 @@ struct WindowCard: View {
                     }
                     ScrollingName(text: window.title.isEmpty ? "Window" : window.title, isScrolling: isSelected,
                                   animates: animates)
+                        // A reused card starts its name afresh for each window, not partway
+                        // through the last one's slide.
+                        .id(window.id)
                         .modifier(DockLabel())
                 }
                 .frame(width: Self.inner.width, height: Self.rowHeight)
-                // At the top, so the gap under the name row is always the same.
-                ZStack(alignment: .top) {
+                // In the middle of its area, up and down as well as across.
+                ZStack {
                     if let live {
                         LivePicture(feed: live).aspectRatio(live.aspectRatio, contentMode: .fit)
                     } else if let picture {
@@ -427,7 +538,7 @@ struct WindowCard: View {
                         transaction.disablesAnimations = true
                     }
                 }
-                .frame(width: Self.pictureSize.width, height: Self.pictureSize.height, alignment: .top)
+                .frame(width: Self.pictureSize.width, height: Self.pictureSize.height)
             }
             .padding(Self.padding)
             .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
@@ -477,11 +588,26 @@ private struct WindowButtons: NSViewRepresentable {
     let isMinimized: Bool
     let perform: (DockWindows.Control) -> Void
 
-    func makeNSView(context: Context) -> WindowButtonGroup { WindowButtonGroup() }
+    /// The pooled buttons sit in a plain view of the card's own, so SwiftUI never holds a
+    /// view that another card has taken over.
+    final class Holder: NSView {
+        let group = WindowButtonGroup.take()
+        init() {
+            super.init(frame: CGRect(origin: .zero, size: WindowButtonGroup.size))
+            addSubview(group)
+            group.setFrameOrigin(.zero)
+        }
+        required init?(coder: NSCoder) { nil }
+        override var intrinsicContentSize: NSSize { WindowButtonGroup.size }
+    }
 
-    func updateNSView(_ group: WindowButtonGroup, context: Context) {
-        group.perform = perform
-        group.update(isActive: isActive, isMinimized: isMinimized)
+    func makeNSView(context: Context) -> Holder { Holder() }
+
+    static func dismantleNSView(_ holder: Holder, coordinator: ()) { WindowButtonGroup.giveBack(holder.group) }
+
+    func updateNSView(_ holder: Holder, context: Context) {
+        holder.group.perform = perform
+        holder.group.update(isActive: isActive, isMinimized: isMinimized)
     }
 }
 
@@ -500,6 +626,26 @@ final class WindowButtonGroup: NSView {
     var perform: (DockWindows.Control) -> Void = { _ in }
     private var buttons: [NSButton] = []
     private var pointerInside = false
+
+    /// AppKit makes window buttons slowly: three for each card took about a third of the
+    /// time to open a preview. Cards that go give theirs back here for the next ones.
+    private static var spare: [WindowButtonGroup] = []
+    private static let mostSpare = 16
+
+    static func take() -> WindowButtonGroup { spare.popLast() ?? WindowButtonGroup() }
+
+    static func giveBack(_ group: WindowButtonGroup) {
+        group.removeFromSuperview()
+        group.perform = { _ in }
+        group.pointerInside = false
+        group.lookAgain()
+        if spare.count < mostSpare { spare.append(group) }
+    }
+
+    /// Made ahead, so the first previews need none.
+    static func makeSpare(_ count: Int) {
+        while spare.count < count { spare.append(WindowButtonGroup()) }
+    }
 
     init() {
         super.init(frame: CGRect(origin: .zero, size: Self.size))

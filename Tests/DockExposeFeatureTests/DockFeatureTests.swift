@@ -132,3 +132,32 @@ private let previewFrame = CGRect(x: 400, y: 900, width: 500, height: 200)
     // The preview closed.
     #expect(LiveWindow.choose(hovered: 3, windows: []) == nil)
 }
+
+@Test func aSlowMoveAlongTheDockIsNotAimingAtThePreview() {
+    // Along a bottom Dock with a little drift up: the next icon takes over.
+    #expect(!DockPreviewsFeature.isLeavingDock(CGPoint(x: 6, y: -1), edge: "bottom"))
+    #expect(!DockPreviewsFeature.isLeavingDock(CGPoint(x: -20, y: -5), edge: "bottom"))
+    // Up from the icon to a card, also one 300 points to the side (about 27°).
+    #expect(DockPreviewsFeature.isLeavingDock(CGPoint(x: 0, y: -10), edge: "bottom"))
+    #expect(DockPreviewsFeature.isLeavingDock(CGPoint(x: 300, y: -150), edge: "bottom"))
+    // Toward the screen edge is never toward the preview.
+    #expect(!DockPreviewsFeature.isLeavingDock(CGPoint(x: 0, y: 10), edge: "bottom"))
+    // Side Docks: away is to the right of a left Dock and to the left of a right one.
+    #expect(DockPreviewsFeature.isLeavingDock(CGPoint(x: 20, y: 4), edge: "left"))
+    #expect(!DockPreviewsFeature.isLeavingDock(CGPoint(x: 1, y: 20), edge: "left"))
+    #expect(DockPreviewsFeature.isLeavingDock(CGPoint(x: -20, y: -4), edge: "right"))
+}
+
+@Test func scrollingOnTheIconStopsAtTheEndsThenGoesRound() {
+    // Inside the list, one window for each step.
+    #expect(DockPreviewsFeature.nextSelection(from: 0, steps: 1, count: 3, newScroll: false) == 1)
+    // A quick spin stops at the last window, and at the first.
+    #expect(DockPreviewsFeature.nextSelection(from: 1, steps: 5, count: 3, newScroll: false) == 2)
+    #expect(DockPreviewsFeature.nextSelection(from: 2, steps: 1, count: 3, newScroll: false) == 2)
+    #expect(DockPreviewsFeature.nextSelection(from: 0, steps: -1, count: 3, newScroll: false) == 0)
+    // A new scroll from an end, after a pause, goes round to the other end.
+    #expect(DockPreviewsFeature.nextSelection(from: 2, steps: 1, count: 3, newScroll: true) == 0)
+    #expect(DockPreviewsFeature.nextSelection(from: 0, steps: -2, count: 3, newScroll: true) == 2)
+    // A new scroll that starts inside the list still stops at the end.
+    #expect(DockPreviewsFeature.nextSelection(from: 1, steps: 4, count: 3, newScroll: true) == 2)
+}

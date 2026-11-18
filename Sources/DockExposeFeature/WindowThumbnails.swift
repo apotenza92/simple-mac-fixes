@@ -20,6 +20,41 @@ final class WindowThumbnails {
 
     func cached(_ id: CGWindowID) -> CGImage? { cache[id]?.image }
 
+    private var prefetching: Set<CGWindowID> = []
+    private var failed: [CGWindowID: Date] = [:]
+
+    /// Pictures for windows that have none yet, taken one at a time in the background, so
+    /// a preview opens with them and not with the app icon for a few frames: every window at
+    /// start, then only windows opened since. Windows the capture cannot take, such as
+    /// minimized ones, are not tried again for a while.
+    func prefetch(_ windows: [DockWindow]) {
+        guard Self.isAllowed else { return }
+        let now = Date()
+        failed = failed.filter { now.timeIntervalSince($0.value) < 10 }
+        let wanted = windows.filter {
+            $0.place != .minimized && cache[$0.id] == nil && !prefetching.contains($0.id) && failed[$0.id] == nil
+        }
+        for window in wanted {
+            prefetching.insert(window.id)
+            Self.captureQueue.async { [weak self] in
+                let image = WindowSpacePrivateApis.captureWindow(window.id, bestResolution: false)
+                    .flatMap { Self.scaled($0, toFit: Self.maximumPixels) }
+                let holder = ImageHolder(image: image)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        self.prefetching.remove(window.id)
+                        guard let image = holder.image else {
+                            self.failed[window.id] = Date()
+                            return
+                        }
+                        if self.cache[window.id] == nil { self.cache[window.id] = (image, Date()) }
+                    }
+                }
+            }
+        }
+    }
+
     /// A picture taken elsewhere, such as the last frame of a live card.
     func remember(_ image: CGImage, for id: CGWindowID) {
         cache[id] = (image, Date())

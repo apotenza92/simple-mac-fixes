@@ -290,7 +290,8 @@ extension SettingsTab {
         case .general: 620
         case .dock: 255
         case .windows: 370
-        case .finder, .mouse: 100
+        // Room for a note about another app that does the same thing.
+        case .finder, .mouse: 150
         case .keyboard: 490
         }
     }

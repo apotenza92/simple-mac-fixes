@@ -157,7 +157,7 @@ enum DockHitTest {
         _ = stableMetadataObserver
         guard isNearDockEdge(point) else { return nil }
         let point = onIconRow(point)
-        guard let element = element(at: point), isInDockProcess(element) else { return nil }
+        guard let element = element(at: point, inDock: true), isInDockProcess(element) else { return nil }
         var current: AXUIElement? = element
         while let item = current, isInDockProcess(item) {
             if case let .appDockIcon(bundleIdentifier)? = dockItemKind(for: item) {
@@ -303,7 +303,12 @@ enum DockHitTest {
         stableMetadataLock.lock()
         var geometry = dockGeometry
         stableMetadataLock.unlock()
-        if geometry == nil || geometry!.expiresAt < now {
+        if let old = geometry, old.expiresAt < now {
+            // Read again off the main thread: the read can wait on the preferences daemon,
+            // and this runs in the pointer's event taps. The old answer serves meanwhile.
+            refreshDockGeometry()
+        }
+        if geometry == nil {
             let domain = "com.apple.dock" as CFString
             CFPreferencesAppSynchronize(domain)
             let edge = CFPreferencesCopyAppValue("orientation" as CFString, domain) as? String ?? "bottom"
@@ -322,6 +327,39 @@ enum DockHitTest {
         case "right": return bounds.maxX - point.x <= geometry.thickness + margin
         default: return bounds.maxY - point.y <= geometry.thickness + margin
         }
+    }
+
+    nonisolated(unsafe) private static var refreshingGeometry = false
+    private static let geometryQueue = DispatchQueue(label: "com.apotenza.SimpleMacFixes.dockGeometry", qos: .userInitiated)
+
+    private static func refreshDockGeometry() {
+        guard stableMetadataLock.withLock({ () -> Bool in
+            if refreshingGeometry { return false }
+            refreshingGeometry = true
+            return true
+        }) else { return }
+        geometryQueue.async {
+            let domain = "com.apple.dock" as CFString
+            CFPreferencesAppSynchronize(domain)
+            let edge = CFPreferencesCopyAppValue("orientation" as CFString, domain) as? String ?? "bottom"
+            let tile = CFPreferencesCopyAppValue("tilesize" as CFString, domain) as? Double ?? 64
+            var magnified = false
+            if let value = CFPreferencesCopyAppValue("magnification" as CFString, domain) as? NSNumber { magnified = value.boolValue }
+            let large = magnified ? (CFPreferencesCopyAppValue("largesize" as CFString, domain) as? Double ?? tile) : tile
+            let geometry = (edge, CGFloat(max(tile, large)) + 24, magnified, ProcessInfo.processInfo.systemUptime + 1)
+            stableMetadataLock.withLock {
+                dockGeometry = geometry
+                refreshingGeometry = false
+            }
+        }
+    }
+
+    /// The Dock's process, kept until the Dock restarts.
+    static func dockProcessIdentifier() -> pid_t? {
+        if let cached = stableMetadataLock.withLock({ stableMetadataCache.dockProcessIdentifier }) { return cached }
+        let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
+        stableMetadataLock.withLock { stableMetadataCache.storeDockProcessIdentifier(pid) }
+        return pid
     }
 
     /// The Dock leaves a few points between the screen edge and its icons. A pointer
@@ -385,10 +423,16 @@ enum DockHitTest {
         return displays.prefix(Int(count)).map(CGDisplayBounds)
     }
 
-    private static func element(at point: CGPoint) -> AXUIElement? {
-        let system = AXUIElementCreateSystemWide()
+    /// With `inDock`, asks the Dock itself, not the whole system: the system answers with the
+    /// top window at the point, and the preview's own window, with its clear margin over the
+    /// top of the icons, then hid the icon under the pointer and closed the preview that had
+    /// just opened. The folder check needs the whole system's answer, to tell a click
+    /// outside the Dock (the Dock also owns the desktop picture).
+    private static func element(at point: CGPoint, inDock: Bool = false) -> AXUIElement? {
+        let target = inDock ? dockProcessIdentifier().map(AXUIElementCreateApplication) : nil
         var element: AXUIElement?
-        let result = AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &element)
+        let result = AXUIElementCopyElementAtPosition(target ?? AXUIElementCreateSystemWide(),
+                                                      Float(point.x), Float(point.y), &element)
         guard result == .success else {
             Logger.debug("AXUIElementCopyElementAtPosition failed with \(result.rawValue)")
             return nil
