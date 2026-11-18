@@ -43,11 +43,12 @@ public enum Feature: String, CaseIterable, Identifiable {
         case .dockFolderFinder:
             "Hold Option and click a folder in the Dock to open it in a Finder window."
         case .instantSpaces:
-            "Moving between spaces with your keyboard shortcuts happens straight away, without the slide."
+            "Turns off the slide when you move between spaces with your keyboard shortcuts, so the next space shows at once."
         case .desktopShortcuts:
             "Extra keyboard shortcuts for getting around your spaces."
         case .instantDock:
-            "When the Dock is hidden, it appears as soon as you point at it."
+            "Turns off the Dock’s animations. A hidden Dock shows as soon as you point at it, "
+                + "and window previews open and close with no fade."
         }
     }
 

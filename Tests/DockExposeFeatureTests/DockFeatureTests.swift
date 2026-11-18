@@ -119,3 +119,16 @@ private let previewFrame = CGRect(x: 400, y: 900, width: 500, height: 200)
     let kept = DockPreviewsFeature.keepingOrder(of: shown, updatedTo: [window(3), window(4), window(1)])
     #expect(kept.map(\.id) == [1, 3, 4])
 }
+
+@Test func onlyTheWindowUnderThePointerPlays() {
+    let windows = [
+        DockWindow(id: 3, processIdentifier: 1, title: "3", place: .here, bounds: .zero),
+        DockWindow(id: 7, processIdentifier: 1, title: "7", place: .minimized, bounds: .zero),
+    ]
+    #expect(LiveWindow.choose(hovered: 3, windows: windows) == 3)
+    // No pointer on a card, or the window is not on this desktop: nothing plays.
+    #expect(LiveWindow.choose(hovered: nil, windows: windows) == nil)
+    #expect(LiveWindow.choose(hovered: 7, windows: windows) == nil)
+    // The preview closed.
+    #expect(LiveWindow.choose(hovered: 3, windows: []) == nil)
+}

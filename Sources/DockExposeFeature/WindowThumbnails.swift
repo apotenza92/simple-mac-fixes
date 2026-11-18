@@ -9,7 +9,7 @@ import ScreenCaptureKit
 @MainActor
 final class WindowThumbnails {
     /// Long side of a picture, in pixels; enough for a sharp card on Retina.
-    private static let maximumPixels: CGFloat = 640
+    static let maximumPixels: CGFloat = 640
     /// Re-capture at most this often while a preview stays open.
     private static let refreshInterval: TimeInterval = 1
 
@@ -19,6 +19,11 @@ final class WindowThumbnails {
     static var isAllowed: Bool { CGPreflightScreenCaptureAccess() }
 
     func cached(_ id: CGWindowID) -> CGImage? { cache[id]?.image }
+
+    /// A picture taken elsewhere, such as the last frame of a live card.
+    func remember(_ image: CGImage, for id: CGWindowID) {
+        cache[id] = (image, Date())
+    }
 
     /// The next request takes a fresh picture, for a window that just changed.
     /// The old one stays as the fallback, since a minimized window can't be captured.
@@ -51,15 +56,15 @@ final class WindowThumbnails {
 
     /// The window server's own picture, taken off the main thread, which also serves the
     /// app's event taps. One at a time: the window server takes them in turn anyway.
-    nonisolated private static let captureQueue = DispatchQueue(label: "com.apotenza.SimpleMacFixes.windowThumbnails",
+    nonisolated static let captureQueue = DispatchQueue(label: "com.apotenza.SimpleMacFixes.windowThumbnails",
                                                                 qos: .userInteractive)
 
     /// Scaled down to `maximumPixels` on its long side, or at the screen's full resolution when nil.
     private static func quickCapture(_ id: CGWindowID, maximumPixels: CGFloat?) async -> CGImage? {
-        let box: ImageBox = await withCheckedContinuation { continuation in
+        let box: ImageHolder = await withCheckedContinuation { continuation in
             captureQueue.async {
                 let image = WindowSpacePrivateApis.captureWindow(id, bestResolution: maximumPixels == nil)
-                continuation.resume(returning: ImageBox(image: image.map { image in
+                continuation.resume(returning: ImageHolder(image: image.map { image in
                     maximumPixels.flatMap { scaled(image, toFit: $0) } ?? image
                 }))
             }
@@ -107,9 +112,4 @@ final class WindowThumbnails {
         shareable = (content, Date())
         return content.windows.first { $0.windowID == id }
     }
-}
-
-/// Carries a picture back from the capture queue.
-private struct ImageBox: @unchecked Sendable {
-    let image: CGImage?
 }

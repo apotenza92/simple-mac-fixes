@@ -5,6 +5,10 @@ import QuartzCore
 /// preview is pointed at. Clicks go straight through it.
 @MainActor
 final class WindowPeek: NSPanel {
+    /// The system's own fades, unless Reduce Motion or Instant Dock is on.
+    var animates = false
+    /// Counts shows and hides, so a fade that ends after the peek came back leaves it up.
+    private var fades = 0
     private let picture = CALayer()
 
     init() {
@@ -15,7 +19,8 @@ final class WindowPeek: NSPanel {
         isOpaque = false
         hasShadow = true
         ignoresMouseEvents = true
-        // Gone in one frame when the real window takes over; a fade would blend the two.
+        // Fades are its own: gone in one frame when the real window takes over, where a fade
+        // would blend the two.
         animationBehavior = .none
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
@@ -41,10 +46,15 @@ final class WindowPeek: NSPanel {
         picture.frame = CGRect(origin: .zero, size: frame.size)
         CATransaction.commit()
         if self.frame != frame { setFrame(frame, display: false) }
-        if !isVisible {
-            alphaValue = 0
+        fades += 1
+        if !isVisible || alphaValue < 1 {
+            if !isVisible { alphaValue = animates ? 0 : 1 }
             orderFrontRegardless()
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.12; animator().alphaValue = 1 }
+            if animates {
+                NSAnimationContext.runAnimationGroup { _ in animator().alphaValue = 1 }
+            } else {
+                alphaValue = 1
+            }
         }
         invalidateShadow()
     }
@@ -59,8 +69,35 @@ final class WindowPeek: NSPanel {
         invalidateShadow()
     }
 
-    func hidePeek() {
+    /// A live frame of the window already showing. The shadow follows the window's
+    /// shape, which a new frame of the same window does not change, so it stays.
+    func updateLive(_ image: CGImage) {
         guard isVisible else { return }
-        orderOut(nil)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        picture.contents = image
+        CATransaction.commit()
+    }
+
+    /// Goes with the system's fade when `animated`, else at once.
+    func hidePeek(animated: Bool = false) {
+        guard isVisible else { return }
+        fades += 1
+        guard animated, animates else {
+            orderOut(nil)
+            alphaValue = 1
+            return
+        }
+        let fade = fades
+        NSAnimationContext.runAnimationGroup { _ in
+            animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                // Shown again while it faded: it stays.
+                guard let self, self.fades == fade else { return }
+                self.orderOut(nil)
+                self.alphaValue = 1
+            }
+        }
     }
 }

@@ -8,6 +8,8 @@ final class DockPreviewModel: ObservableObject {
     @Published var appIcon: NSImage?
     @Published var windows: [DockWindow] = []
     @Published var pictures: [CGWindowID: CGImage] = [:]
+    /// Live pictures of windows on this desktop, while the preview shows.
+    @Published var live: [CGWindowID: LiveFeed] = [:]
     /// The window a click on the Dock icon brings forward: the most recent at first,
     /// then whichever card the pointer or a scroll on the icon last picked.
     @Published var selected: CGWindowID?
@@ -17,6 +19,8 @@ final class DockPreviewModel: ObservableObject {
     @Published var scrollLength: CGFloat?
     /// Counts previews opened, so each one's list starts scrolled to its first card.
     @Published var visit = 0
+    /// The system's own animations, unless Reduce Motion or Instant Dock is on.
+    @Published var animates = false
     var choose: (DockWindow) -> Void = { _ in }
     /// The pointer reaching (true) or leaving (false) a window's card.
     var pointAt: (DockWindow, Bool) -> Void = { _, _ in }
@@ -114,6 +118,8 @@ final class DockPreviewPanel: NSPanel {
     /// screen edge the Dock sits on.
     func show(beside icon: CGRect, edge: String, magnified: Bool) {
         place(beside: icon, edge: edge, magnified: magnified)
+        // The system's fade as it opens and closes, as for a utility panel, or none.
+        animationBehavior = model.animates ? .utilityWindow : .none
         orderFrontRegardless()
         makeKey()
     }
@@ -252,7 +258,8 @@ struct DockPreviewView: View {
             : AnyLayout(HStackLayout(alignment: .top, spacing: DockPreviewPanel.spacing))
         return layout {
             ForEach(model.windows) { window in
-                WindowCard(window: window, picture: model.pictures[window.id], appIcon: model.appIcon,
+                WindowCard(window: window, picture: model.pictures[window.id], live: model.live[window.id],
+                           appIcon: model.appIcon, animates: model.animates,
                            isSelected: model.selected == window.id,
                            select: { model.selected = window.id },
                            pointAt: { model.pointAt(window, $0) },
@@ -283,7 +290,8 @@ struct DockPreviewView: View {
                     .clipShape(RoundedRectangle(cornerRadius: DockPreviewPanel.cornerRadius, style: .continuous))
                     // A card picked by scrolling on the Dock icon comes into view.
                     .onChange(of: model.selected) { _, selected in
-                        if let selected { proxy.scrollTo(selected) }
+                        guard let selected else { return }
+                        withAnimation(model.animates ? .default : nil) { proxy.scrollTo(selected) }
                     }
                 }
             } else {
@@ -353,10 +361,14 @@ private struct DockGlass: NSViewRepresentable {
     }
 }
 
-private struct WindowCard: View {
+struct WindowCard: View {
     let window: DockWindow
     let picture: CGImage?
+    /// The window's live picture once its first frame came, which replaces the still one.
+    let live: LiveFeed?
     let appIcon: NSImage?
+    /// The system's own animations, unless Reduce Motion or Instant Dock is on.
+    let animates: Bool
     let isSelected: Bool
     let select: () -> Void
     let pointAt: (Bool) -> Void
@@ -373,25 +385,29 @@ private struct WindowCard: View {
     /// As tall as the buttons; the name is centred on them.
     private static let rowHeight = WindowButtonGroup.size.height
     private static let inner = CGSize(width: size.width - 2 * padding, height: size.height - 2 * padding)
-    private static let pictureSize = CGSize(width: inner.width, height: inner.height - rowHeight - padding)
+    static let pictureSize = CGSize(width: inner.width, height: inner.height - rowHeight - padding)
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: Self.padding) {
-                HStack(spacing: 8) {
+                // The name starts 12 points after the green button.
+                HStack(spacing: 12) {
                     // Always in the same spot: the window's own buttons, in colour on the
                     // selected card and in the system's grey on the others.
                     if DockWindows.hasControls(window) {
                         WindowButtons(isActive: isSelected, isMinimized: window.place == .minimized, perform: control)
                             .frame(width: WindowButtonGroup.size.width, height: WindowButtonGroup.size.height)
                     }
-                    ScrollingName(text: window.title.isEmpty ? "Window" : window.title, isScrolling: isSelected)
+                    ScrollingName(text: window.title.isEmpty ? "Window" : window.title, isScrolling: isSelected,
+                                  animates: animates)
                         .modifier(DockLabel())
                 }
                 .frame(width: Self.inner.width, height: Self.rowHeight)
                 // At the top, so the gap under the name row is always the same.
                 ZStack(alignment: .top) {
-                    if let picture {
+                    if let live {
+                        LivePicture(feed: live).aspectRatio(live.aspectRatio, contentMode: .fit)
+                    } else if let picture {
                         Image(decorative: picture, scale: 2)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -403,17 +419,20 @@ private struct WindowCard: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
+                // The picture replaces the app's icon with the system's fade, or at once.
+                .animation(animates ? .default : nil, value: picture != nil)
                 .transaction { transaction in
-                    // The picture replaces the app's icon at once, with no fade.
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
+                    if !animates {
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
                 }
                 .frame(width: Self.pictureSize.width, height: Self.pictureSize.height, alignment: .top)
             }
             .padding(Self.padding)
             .contentShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         }
-        .buttonStyle(CardGlassStyle(isHighlighted: isSelected))
+        .buttonStyle(CardGlassStyle(isHighlighted: isSelected, animates: animates))
         .focusable(false)
         .onHover { isHovering in
             if isHovering { select() }
@@ -426,11 +445,18 @@ private struct WindowCard: View {
 /// second layer of regular glass on the panel's for the selected card.
 private struct CardGlassStyle: ButtonStyle {
     let isHighlighted: Bool
+    let animates: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background {
-                if isHighlighted { CardGlass(isPressed: configuration.isPressed) }
+                // The glass comes and goes with the system's fade, or at once. Only the glass:
+                // a fade on the whole card also faded the sliding name out where it stood,
+                // over the name that replaces it.
+                ZStack {
+                    if isHighlighted { CardGlass(isPressed: configuration.isPressed) }
+                }
+                .animation(animates ? .default : nil, value: isHighlighted)
             }
     }
 }
@@ -550,40 +576,55 @@ private struct DockLabelGlass<S: Shape>: ViewModifier {
 }
 
 /// A window's name with the Dock name label's text: 14-point system text in the standard
-/// label colour, at the right of the title row, as far in from the end as the window's
-/// buttons are from the start. The selected card is in the label's
+/// label colour, at the left of the title row, just after the window's buttons, and as far in
+/// from the end as the buttons are from the start. The selected card is in the label's
 /// glass as a whole; on the other cards the name sits on the Dock glass alone. The room
 /// is the same either way, so nothing moves as the selection changes.
 private struct DockLabel: ViewModifier {
     func body(content: Content) -> some View {
-        content.frame(maxWidth: .infinity, alignment: .trailing)
+        content.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 private struct ScrollingName: View {
     let text: String
     let isScrolling: Bool
+    /// Without animations the name moves to its end and back in single steps.
+    let animates: Bool
     @State private var fullWidth: CGFloat = 0
     @State private var visibleWidth: CGFloat = 0
     @State private var offset: CGFloat = 0
+    /// Whether the name fades out at each edge: at an edge where more of it is past the edge.
+    @State private var fadesLeading = false
+    @State private var fadesTrailing = true
+    /// Slides under way: the whole name shows, in place of the one that ends in "…".
+    @State private var sliding = false
+    @State private var slides: Task<Void, Never>?
+    /// Counts selections and deselections, so a slide back that ends late changes nothing.
+    @State private var turn = 0
 
     /// Points per second; slow enough to read.
     private static let speed: CGFloat = 40
-    private static let pause: Duration = .milliseconds(900)
+    private static let pause: Duration = .milliseconds(500)
+    /// The name fades out over this width at an edge, instead of a hard cut.
+    private static let fadeWidth: CGFloat = 14
+    private static let fadeTime: TimeInterval = 0.2
 
     private var overflow: CGFloat { max(0, fullWidth - visibleWidth) }
 
     var body: some View {
-        let scrolling = isScrolling && overflow > 0
-        // The truncated name sets the size; the whole name slides inside it and is cut
-        // off at its edges, so a long name never reaches past its own card.
+        let scrolling = sliding && overflow > 0
+        // The truncated name sets the size; the whole name slides inside it and fades out
+        // at its edges, so a long name never reaches past its own card.
         label.lineLimit(1).truncationMode(.tail)
             .opacity(scrolling ? 0 : 1)
             .frame(alignment: .leading)
             .overlay(alignment: .leading) {
                 if scrolling { label.fixedSize().offset(x: offset) }
             }
-            .clipped()
+            .mask {
+                if scrolling { fadeMask } else { Rectangle() }
+            }
         .background(GeometryReader { proxy in
             Color.clear
                 .onAppear { visibleWidth = proxy.size.width }
@@ -597,20 +638,101 @@ private struct ScrollingName: View {
                     .onChange(of: proxy.size.width) { _, width in fullWidth = width }
             })
         }
-        .task(id: isScrolling) {
-            offset = 0
-            guard isScrolling else { return }
-            while !Task.isCancelled, overflow > 0 {
-                try? await Task.sleep(for: Self.pause)
-                let distance = overflow
-                let across = Double(distance / Self.speed)
-                withAnimation(.linear(duration: across)) { offset = -distance }
-                try? await Task.sleep(for: .seconds(across) + Self.pause)
-                guard !Task.isCancelled else { break }
-                withAnimation(.easeInOut(duration: 0.35)) { offset = 0 }
-                try? await Task.sleep(for: .milliseconds(350))
+        // Deselected halfway, the name slides straight back to its start, as fast as it
+        // does at the end of a slide. Stopping it where it stood made it jump.
+        .onChange(of: isScrolling, initial: true) { _, isScrolling in
+            turn += 1
+            slides?.cancel()
+            slides = nil
+            if isScrolling {
+                slides = Task { await slide() }
+            } else {
+                slideBack()
             }
         }
+        .onDisappear {
+            slides?.cancel()
+            slides = nil
+        }
+    }
+
+    private static let backTime: TimeInterval = 0.25
+
+    private func slide() async {
+        while !Task.isCancelled, overflow > 0 {
+            sliding = true
+            try? await Task.sleep(for: Self.pause)
+            guard !Task.isCancelled else { return }
+            let distance = overflow
+            let across = Double(distance / Self.speed)
+            let fade: Animation? = animates ? .easeInOut(duration: Self.fadeTime) : nil
+            if animates {
+                withAnimation(.linear(duration: across)) { offset = -distance }
+                withAnimation(fade) { fadesLeading = true }
+                // The end of the name comes in: no fade at the trailing edge once it is there.
+                try? await Task.sleep(for: .seconds(max(0, across - Self.fadeTime)))
+                guard !Task.isCancelled else { return }
+                withAnimation(fade) { fadesTrailing = false }
+                try? await Task.sleep(for: .seconds(Self.fadeTime))
+            } else {
+                // Held at the start as long as the slide takes, then at the end.
+                try? await Task.sleep(for: .seconds(across))
+                guard !Task.isCancelled else { return }
+                withAnimation(nil) {
+                    offset = -distance
+                    fadesLeading = true
+                    fadesTrailing = false
+                }
+            }
+            try? await Task.sleep(for: Self.pause)
+            guard !Task.isCancelled else { return }
+            withAnimation(animates ? .easeInOut(duration: Self.backTime) : nil) {
+                offset = 0
+                fadesLeading = false
+                fadesTrailing = true
+            }
+            try? await Task.sleep(for: .seconds(Self.backTime))
+        }
+        if !Task.isCancelled { sliding = false }
+    }
+
+    /// Back to the start of the name, then the name that ends in "…".
+    private func slideBack() {
+        guard sliding else { return }
+        guard animates, offset != 0 else {
+            offset = 0
+            fadesLeading = false
+            fadesTrailing = true
+            sliding = false
+            return
+        }
+        withAnimation(.easeInOut(duration: Self.backTime)) {
+            offset = 0
+            fadesLeading = false
+            fadesTrailing = true
+        }
+        let turn = turn
+        Task {
+            try? await Task.sleep(for: .seconds(Self.backTime))
+            if self.turn == turn { sliding = false }
+        }
+    }
+
+    /// Opaque in the middle, fading to clear at an edge where more of the name is past it.
+    private var fadeMask: some View {
+        HStack(spacing: 0) {
+            edge(fading: fadesLeading, towards: .leading)
+            Rectangle()
+            edge(fading: fadesTrailing, towards: .trailing)
+        }
+    }
+
+    private func edge(fading: Bool, towards side: UnitPoint) -> some View {
+        ZStack {
+            LinearGradient(colors: [.clear, .black], startPoint: side, endPoint: side == .leading ? .trailing : .leading)
+            Rectangle().opacity(fading ? 0 : 1)
+        }
+        .frame(width: Self.fadeWidth)
     }
 
     /// The Dock's own name label: the 14-point system font, regular, in the standard label

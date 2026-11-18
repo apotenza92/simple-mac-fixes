@@ -77,6 +77,11 @@ final class UpdateManager: NSObject, ObservableObject, SPUUpdaterDelegate {
         schedule = value
     }
 
+    /// The schedule a new install starts with.
+    func resetSchedule() {
+        setSchedule(.resolve(saved: nil, bundleIdentifier: Bundle.main.bundleIdentifier, automaticChecksEnabled: true))
+    }
+
     func checkForUpdates() {
         controller?.checkForUpdates(nil)
     }

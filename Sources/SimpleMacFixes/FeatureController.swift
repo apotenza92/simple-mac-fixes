@@ -60,6 +60,14 @@ final class FeatureController: ObservableObject {
         apply()
     }
 
+    /// Every fix back to how a new install starts.
+    func resetToDefaults() {
+        objectWillChange.send()
+        for feature in Feature.allCases { defaults.set(feature.enabledByDefault, forKey: feature.defaultsKey) }
+        NSWorkspace.shared.runningApplications.forEach(quitIfReplaced)
+        apply()
+    }
+
     /// Another running utility doing the same job, which would double up or undo it.
     func conflicts(in area: ConflictingApp.Area) -> [ConflictingApp] {
         let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
@@ -138,6 +146,8 @@ final class FeatureController: ObservableObject {
              start: greenButtonMaximize.start, stop: greenButtonMaximize.stop)
         // Choosing a window on another desktop jumps there instantly.
         dockPreviews.switchToSpace = { InstantSpacesFeature.switchInstantly(toSpace: $0) }
+        // People who want an instant Dock get previews with no animations too.
+        dockPreviews.instantDock = isEnabled(.instantDock)
         dockPreviews.pressGreenButton = { [greenButtonMaximize] window, optionPressed in
             greenButtonMaximize.pressGreenButton(of: window, optionPressed: optionPressed)
         }

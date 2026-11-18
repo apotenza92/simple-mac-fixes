@@ -21,6 +21,13 @@ public final class DockPreviewsFeature {
     /// The green button as the window's own would act, given whether Option is held;
     /// false leaves it to the button's usual full screen. Called off the main thread.
     public var pressGreenButton: ((AXUIElement, Bool) -> Bool)?
+    /// Instant Dock is on: the preview opens, closes and changes at once, as with Reduce Motion.
+    public var instantDock = false
+
+    /// The system's own animations, unless the person asked for less motion or an instant Dock.
+    private var animates: Bool {
+        !instantDock && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     private lazy var panel: DockPreviewPanel = {
         let panel = DockPreviewPanel()
@@ -31,6 +38,15 @@ public final class DockPreviewsFeature {
     }()
     private var shownIcon: CGRect?
     private let thumbnails = WindowThumbnails()
+    /// Plays the card under the pointer, and its window when it is shown in place.
+    private lazy var liveWindow: LiveWindow = {
+        let live = LiveWindow(model: panel.model, thumbnails: thumbnails)
+        live.frame = { [weak self] id, image in
+            guard let self, self.peeking == id else { return }
+            self.peek.updateLive(image)
+        }
+        return live
+    }()
     /// No preview while Mission Control or App Exposé is open: the Dock's icons are its own then.
     private let missionControl = MissionControlWatch()
     /// Looks for Mission Control opening while the preview shows; newer macOS doesn't announce it.
@@ -504,6 +520,7 @@ public final class DockPreviewsFeature {
         let model = panel.model
         let sameVisit = shownBundle == icon.bundleIdentifier && panel.isVisible
         if !sameVisit {
+            liveWindow.stop()
             model.pictures = [:]
             model.selected = nil
             model.visit += 1
@@ -526,6 +543,9 @@ public final class DockPreviewsFeature {
         for window in windows where model.pictures[window.id] == nil {
             if let cached = thumbnails.cached(window.id) { model.pictures[window.id] = cached }
         }
+        liveWindow.run()
+        if model.animates != animates { model.animates = animates }
+        peek.animates = animates
         steadyReads = 0
         panel.show(beside: icon.frame, edge: DockHitTest.dockEdge, magnified: DockHitTest.dockMagnifies)
         DockAutoHideHold.hold()
@@ -744,6 +764,7 @@ public final class DockPreviewsFeature {
         cancelAim()
         pictureTask?.cancel()
         pictureTask = nil
+        liveWindow.stop()
         shownBundle = nil
         shownIcon = nil
         retryWork?.cancel()
@@ -795,7 +816,9 @@ public final class DockPreviewsFeature {
     // MARK: Showing a window in place
 
     private lazy var peek = WindowPeek()
-    private var peeking: CGWindowID?
+    private var peeking: CGWindowID? {
+        didSet { liveWindow.shownInPlace = peeking }
+    }
     private var peekWork: DispatchWorkItem?
     private var peekTask: Task<Void, Never>?
     private var fullPictures: [CGWindowID: CGImage] = [:]
@@ -806,7 +829,9 @@ public final class DockPreviewsFeature {
     private static let peekLeaveGrace: TimeInterval = 0.15
 
     /// The card the pointer is on.
-    private var pointedAt: CGWindowID?
+    private var pointedAt: CGWindowID? {
+        didSet { liveWindow.hovered = pointedAt }
+    }
 
     private func pointAt(_ window: DockWindow, _ isOn: Bool) {
         if isOn {
@@ -841,11 +866,15 @@ public final class DockPreviewsFeature {
             if peeking != nil { endPeek() }
             return
         }
-        guard panel.isVisible, let image = fullPictures[window.id] ?? panel.model.pictures[window.id] ?? thumbnails.cached(window.id)
+        // A live window's frames come at full resolution from the next one on, so it needs
+        // no capture of its own.
+        let live = liveWindow.latestFrame(of: window.id)
+        guard panel.isVisible,
+              let image = fullPictures[window.id] ?? live ?? panel.model.pictures[window.id] ?? thumbnails.cached(window.id)
         else { return }
         peeking = window.id
         peek.show(image, at: window.bounds, dimmed: window.place == .minimized || window.place == .hidden)
-        guard fullPictures[window.id] == nil else { return }
+        guard fullPictures[window.id] == nil, live == nil else { return }
         let scale = NSScreen.screens.first { $0.frame.intersects(window.bounds) }?.backingScaleFactor ?? 2
         peekTask?.cancel()
         peekTask = Task { [weak self, thumbnails] in
@@ -887,7 +916,7 @@ public final class DockPreviewsFeature {
         peekTask?.cancel()
         peekTask = nil
         peeking = nil
-        peek.hidePeek()
+        peek.hidePeek(animated: true)
     }
 
     // MARK: Going to a window
