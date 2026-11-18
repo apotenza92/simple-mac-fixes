@@ -3,19 +3,21 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.1.6</title>
-      <sparkle:version>100690000</sparkle:version>
-      <sparkle:shortVersionString>0.1.6</sparkle:shortVersionString>
+      <title>v0.1.7</title>
+      <sparkle:version>100790000</sparkle:version>
+      <sparkle:shortVersionString>0.1.7</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- In window previews in the Dock, the window under the pointer now plays live, so you can see a video or anything else that moves before you pick it. The other windows keep their picture, so the preview stays fast.
-- When you rest on a window in the preview, the window that shows in its place plays live too.
-- Window names now start next to the window's buttons. Long names fade out at their edges as they slide, and slide back when you move to another window.
-- The preview now fades out as it closes, like the Dock's own menus. If you turned on Reduce Motion in your Mac's settings, or Instant Dock, it opens and closes at once.
-- Settings now has tabs along the top, so each kind of fix has its own page.
-- A new Reset Settings button puts every switch back to how it was when you first installed the app.
-- Settings explains each part in a line under its name, and Instant Dock and instant space switching now say clearly that they turn off animations.
+      <description sparkle:format="plain-text">- Window previews in the Dock open and change faster and more smoothly as you move along the Dock.
+- The Dock no longer shows another app's name under a preview, also when you move quickly between apps or click an icon.
+- Window pictures are ready when a preview opens, so you no longer see the app's icon for a moment first.
+- Pointing at an app shows its window in place straight away, and it plays live, like the window under the pointer.
+- Click the app's icon to close the preview and go to the window you picked. You can stay on the icon, scroll to a window and click.
+- Scrolling on an app's icon now goes round its windows. It stops at the first and last window; scroll again after a short pause to go round.
+- Keys you type while a preview is open now reach the app you are using.
+- A preview no longer stays on the wrong app or closes by itself when you move slowly along the Dock.
+- Window pictures sit in the middle of their cards.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.6/Simple-Mac-Fixes-v0.1.6-macos-x64.zip" length="3765169" type="application/octet-stream" sparkle:edSignature="PwqLI3z53y2Tk83GV9eR5/wP9dP1nt5uqlVB2qTrh7wlYbzftUMnUaI4IK+VG57VokMDL9+a0UxL8H0nyOmjDg==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.7/Simple-Mac-Fixes-v0.1.7-macos-x64.zip" length="3789563" type="application/octet-stream" sparkle:edSignature="zzlhKMezH5VdijF0DR/DlNFbI/E2yubKf8NSjli4cvxHCwAXIvsESxxrUlUVj5+dpXqH+w9wlD6w2UFjDeS5Dw==" />
     </item>
   </channel>
 </rss>
