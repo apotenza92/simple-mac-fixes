@@ -3,14 +3,14 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.1.8</title>
-      <sparkle:version>100890000</sparkle:version>
-      <sparkle:shortVersionString>0.1.8</sparkle:shortVersionString>
+      <title>v0.1.9</title>
+      <sparkle:version>100990000</sparkle:version>
+      <sparkle:shortVersionString>0.1.9</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- Window previews in the Dock work again after you use Mission Control or the windows of one app, also when you open them from a corner of the screen. Before, previews could stop opening until you quit and opened Simple Mac Fixes again.
-- If you rest the pointer on an app as Mission Control closes, its preview now opens without moving the pointer.
+      <description sparkle:format="plain-text">- Clicking an app in the Dock while its window previews show no longer makes the pointer jump.
+- A window now shows in its place only while you rest the pointer on its picture in the preview, not as soon as the preview opens.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.8/Simple-Mac-Fixes-v0.1.8-macos-arm64.zip" length="3746435" type="application/octet-stream" sparkle:edSignature="pXjRA8lzwXsS+dwD2GqbK9A6tSccjDmIhoxwcbwPJeFcKipwo0ttT2wOIYOG+0l6yT5+aVpqkmOSkNVTkNaJCQ==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.9/Simple-Mac-Fixes-v0.1.9-macos-arm64.zip" length="3746462" type="application/octet-stream" sparkle:edSignature="H6l0dVRvs6h2Zk6EpvZENL8Jis8xmPCar5ly9WGTVT3XuG07zNHSPdzHZu4/OFe64LdycvH+kp/OHzBgTwOJDw==" />
     </item>
   </channel>
 </rss>
