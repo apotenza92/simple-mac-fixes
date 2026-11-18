@@ -264,12 +264,14 @@ public final class DockPreviewsFeature {
     /// moves on the Dock, so it handled the click as if the pointer were still where it last
     /// saw it, and showed that neighbouring app's name.
     private func clickAhead(at point: CGPoint, stamp: UInt64) {
+        // Every click on the Dock reaches it with the Dock knowing where the pointer really
+        // is, once it was told the pointer left (a preview showing, or just after a click).
+        // A click that came while it thought the pointer was away could move the pointer.
+        let toldItLeft = panel.isShown || hidingDockLabel || clickedArea != nil
+        if toldItLeft, DockHitTest.isInDockStrip(point) { Self.postToDock(point) }
         guard panel.isShown, shownIcon?.contains(point) == true else { return }
         clickedAhead = stamp
-        // Told the pointer left, not where it is: the Dock still takes the click at its own
-        // place, and shows no name until the pointer leaves the icon.
         hidingDockLabel = false
-        Self.postToDock(Self.offScreen)
         iconClicked()
     }
 
@@ -720,12 +722,7 @@ public final class DockPreviewsFeature {
         steadyReads = 0
         panel.show(beside: icon.frame, edge: DockHitTest.dockEdge, magnified: DockHitTest.dockMagnifies)
         DockAutoHideHold.hold()
-        if !sameVisit {
-            hideDockLabel()
-            // The selected window shows in place at once, as when resting on its card or
-            // scrolling to it; the one already in front on screen needs none.
-            if let window = model.windows.first(where: { $0.id == model.selected }) { showPeek(window) }
-        }
+        if !sameVisit { hideDockLabel() }
         watchForMissionControl()
         let windows = model.windows
         pictureTask?.cancel()
