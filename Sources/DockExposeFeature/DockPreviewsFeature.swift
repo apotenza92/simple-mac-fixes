@@ -114,7 +114,7 @@ public final class DockPreviewsFeature {
                 let stamp = event.timestamp
                 MainActor.assumeIsolated {
                     if type == .mouseMoved {
-                        feature.followMove(to: location, stamp: stamp)
+                        feature.handle(.mouseMoved, at: location, scroll: nil)
                     } else if type == .leftMouseDown, stamp != 0, stamp == feature.clickedAhead {
                         // Handled in the active tap, before the Dock saw it.
                     } else {
@@ -304,10 +304,12 @@ public final class DockPreviewsFeature {
         if missionControl.isOpen {
             latestPoint = nil
             if panel.isShown { hide() }
+            missionControl.confirmStillOpen()
             return
         }
         if point != latestPoint {
             retries = 0
+            missionControlRetries = 0
             steadyReads = 0
         }
         if DockHitTest.checkDockEdge(near: point) {
@@ -380,7 +382,7 @@ public final class DockPreviewsFeature {
                 return Unmanaged.passUnretained(event)
             }
             guard type == .mouseMoved else { return Unmanaged.passUnretained(event) }
-            let holdBack = MainActor.assumeIsolated { feature.moveAhead(to: location, stamp: stamp) }
+            let holdBack = MainActor.assumeIsolated { feature.moveAhead(to: location) }
             return holdBack ? nil : Unmanaged.passUnretained(event)
         }
         guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
@@ -398,16 +400,21 @@ public final class DockPreviewsFeature {
     /// is on the Dock.
     private static let keepClosedPanel: TimeInterval = 0.3
 
-    /// The newest move followed. The two taps reach the main thread separately, and a
-    /// busy main thread can take their moves out of order; an older one is then dropped.
-    private var lastMoveStamp: UInt64 = 0
+    /// Counts moves held back from the Dock, so only the newest one is followed: a held move
+    /// is followed just after the tap returns, and a newer one may already be waiting. Moves
+    /// that reach the Dock are followed by the listening tap as they come. (Ordering every
+    /// move by its timestamp was simpler to get wrong: events from different sources need
+    /// not share a clock.)
+    private var heldMoves = 0
 
-    private func followMove(to point: CGPoint, stamp: UInt64) {
-        if stamp != 0 {
-            guard stamp > lastMoveStamp else { return }
-            lastMoveStamp = stamp
+    /// Follows a move held back from the Dock, unless a newer one came since.
+    private func followHeldMove(to point: CGPoint) {
+        heldMoves &+= 1
+        let move = heldMoves
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.heldMoves == move else { return }
+            self.handle(.mouseMoved, at: point, scroll: nil)
         }
-        handle(.mouseMoved, at: point, scroll: nil)
     }
 
     /// Follows a move on the Dock before the Dock sees it, so the preview opens, changes or
@@ -423,12 +430,12 @@ public final class DockPreviewsFeature {
     /// The tap only decides, from what is known already; the preview's work follows straight
     /// after it returns. Every pointer move on the Mac waits for this tap, and opening a
     /// preview in it held them all for 7–11 ms.
-    private func moveAhead(to point: CGPoint, stamp: UInt64) -> Bool {
+    private func moveAhead(to point: CGPoint) -> Bool {
         // The way up from a clicked icon: the Dock showed its name again on the way.
         if !DockHitTest.dockMagnifies, !panel.isShown, let clickedArea, clickedArea.contains(point),
            !DockHitTest.isInDockStrip(point) {
             Self.postToDock(Self.offScreen)
-            DispatchQueue.main.async { [weak self] in self?.followMove(to: point, stamp: stamp) }
+            followHeldMove(to: point)
             return true
         }
         guard !DockHitTest.dockMagnifies, DockHitTest.isInDockStrip(point), isOnDockBar(point) else { return false }
@@ -443,7 +450,7 @@ public final class DockPreviewsFeature {
         guard panel.isShown || opensHere || onClickedIcon else { return false }
         hidingDockLabel = true
         Self.postToDock(Self.offScreen)
-        DispatchQueue.main.async { [weak self] in self?.followMove(to: point, stamp: stamp) }
+        followHeldMove(to: point)
         return true
     }
 
@@ -501,8 +508,11 @@ public final class DockPreviewsFeature {
         lookupInFlight = true
         lookupQueue.async { [weak self, recentWindows] in
             // The last answer, so the pointer's path never waits on the window list; a
-            // fresh one follows and closes a preview that opened over Mission Control.
-            let missionControlOpen = MissionControlWatch.lastKnownIsShowing
+            // fresh one follows and closes a preview that opened over Mission Control. A last
+            // answer that says it shows is read again: just after Mission Control closed it
+            // was still "open", and stopped several previews in a row.
+            var missionControlOpen = MissionControlWatch.lastKnownIsShowing
+            if missionControlOpen { missionControlOpen = MissionControlWatch.windowManagerIsShowing() }
             self?.backgroundQueue.async {
                 guard MissionControlWatch.windowManagerIsShowing(), !missionControlOpen else { return }
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.hide() } }
@@ -515,6 +525,9 @@ public final class DockPreviewsFeature {
                     self.lookupInFlight = false
                     if missionControlOpen {
                         self.hide()
+                        // A pointer that rests on the icon gets its preview once Mission
+                        // Control has closed, with no move needed.
+                        self.lookAgainAfterMissionControl(at: point)
                         return
                     }
                     // The pointer has moved on to another icon since: this answer is old.
@@ -549,6 +562,18 @@ public final class DockPreviewsFeature {
                     }
                 }
             }
+        }
+    }
+
+    private var missionControlRetries = 0
+
+    /// Looks again every 0.25 s for up to 3 s while the pointer stays where it was.
+    private func lookAgainAfterMissionControl(at point: CGPoint) {
+        guard missionControlRetries < 12 else { return }
+        missionControlRetries += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self, self.latestPoint == point, !self.panel.isShown else { return }
+            self.lookUp()
         }
     }
 

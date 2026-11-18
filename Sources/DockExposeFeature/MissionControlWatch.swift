@@ -103,6 +103,27 @@ final class MissionControlWatch {
         self.observer = nil
     }
 
+    private var confirming = false
+
+    /// macOS 27 draws Mission Control and App Exposé in WindowManager, and the Dock's notices
+    /// are not to be trusted there: one that said "opened" with no "closed" after it stopped
+    /// every preview until the app restarted. So an "open" that WindowManager does not show
+    /// is cleared.
+    func confirmStillOpen() {
+        guard isOpen, !confirming, ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 else { return }
+        confirming = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let showing = Self.windowManagerIsShowing()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.confirming = false
+                    if !showing { self.isOpen = false }
+                }
+            }
+        }
+    }
+
     private func received(_ name: String) {
         if Self.openNotifications.contains(name) {
             Logger.debug("Mission Control or App Exposé opened (\(name))")
