@@ -3,19 +3,19 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.1.5</title>
-      <sparkle:version>100590000</sparkle:version>
-      <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
+      <title>v0.1.6</title>
+      <sparkle:version>100690000</sparkle:version>
+      <sparkle:shortVersionString>0.1.6</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- Window previews in the Dock have a new look that matches the Dock. Each window is a larger card with its picture and name, on the same glass as the Dock.
-- Each card now has the window's own close, minimize and maximize buttons next to its name, always in the same place.
-- Window names are easier to read on any desktop picture, in light and dark mode.
-- The preview now covers the app's name under the pointer, and it stays in line with the icon when the Dock grows the icons.
-- When an app has more windows than fit on the screen, you can scroll through them.
-- The preview opens faster, opens at once with no fade, and no longer flashes the first time you pick a window.
-- Window names now show correctly for browsers that give every window the app's name.
+      <description sparkle:format="plain-text">- In window previews in the Dock, the window under the pointer now plays live, so you can see a video or anything else that moves before you pick it. The other windows keep their picture, so the preview stays fast.
+- When you rest on a window in the preview, the window that shows in its place plays live too.
+- Window names now start next to the window's buttons. Long names fade out at their edges as they slide, and slide back when you move to another window.
+- The preview now fades out as it closes, like the Dock's own menus. If you turned on Reduce Motion in your Mac's settings, or Instant Dock, it opens and closes at once.
+- Settings now has tabs along the top, so each kind of fix has its own page.
+- A new Reset Settings button puts every switch back to how it was when you first installed the app.
+- Settings explains each part in a line under its name, and Instant Dock and instant space switching now say clearly that they turn off animations.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.5/Simple-Mac-Fixes-v0.1.5-macos-arm64.zip" length="3678655" type="application/octet-stream" sparkle:edSignature="MpkZN3WzISvsZqQnneD3/TBtPTGjMsIlxBCHvvwiCM4Uhtnw8XitO8lHAfaM3icd8FZOCfqgYvf0J0tQp09FBw==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.6/Simple-Mac-Fixes-v0.1.6-macos-arm64.zip" length="3721117" type="application/octet-stream" sparkle:edSignature="if1nfyNbdvpZMPziF4y7hxYkrkRkq6x9nX7yfld49N7pg4GgzuPTqJb3lcukoP9xaKaMo7GhnaOSoI0aNcQ/Bw==" />
     </item>
   </channel>
 </rss>
