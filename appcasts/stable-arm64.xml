@@ -3,14 +3,15 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.1.9</title>
-      <sparkle:version>100990000</sparkle:version>
-      <sparkle:shortVersionString>0.1.9</sparkle:shortVersionString>
+      <title>v0.2.0</title>
+      <sparkle:version>200090000</sparkle:version>
+      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- Clicking an app in the Dock while its window previews show no longer makes the pointer jump.
-- A window now shows in its place only while you rest the pointer on its picture in the preview, not as soon as the preview opens.
+      <description sparkle:format="plain-text">- Clicking an app in the Dock now works exactly as it does without Simple Mac Fixes: it brings the app forward, and the window previews only close.
+- The pointer near the side of the screen no longer makes window previews check the Dock's position in a way that can briefly slow the pointer.
+- Window pictures for closed windows are no longer kept in memory.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.1.9/Simple-Mac-Fixes-v0.1.9-macos-arm64.zip" length="3746462" type="application/octet-stream" sparkle:edSignature="H6l0dVRvs6h2Zk6EpvZENL8Jis8xmPCar5ly9WGTVT3XuG07zNHSPdzHZu4/OFe64LdycvH+kp/OHzBgTwOJDw==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.2.0/Simple-Mac-Fixes-v0.2.0-macos-arm64.zip" length="3744377" type="application/octet-stream" sparkle:edSignature="F7+WNAHL2y6fgqz9q46t4u6Fux5QKVkgl1ugmiUlUp1rFQoxg/wwFmhf1pzI/5nAKsCb9Zxul4t1Ps6ptmbGAA==" />
     </item>
   </channel>
 </rss>
