@@ -4,14 +4,13 @@ import SwiftUI
 /// What the panel shows: one app's windows, with pictures as they arrive.
 @MainActor
 final class DockPreviewModel: ObservableObject {
-    @Published var appName = ""
     @Published var appIcon: NSImage?
     @Published var windows: [DockWindow] = []
     @Published var pictures: [CGWindowID: CGImage] = [:]
     /// Live pictures of windows on this desktop, while the preview shows.
     @Published var live: [CGWindowID: LiveFeed] = [:]
-    /// The window a click on the Dock icon brings forward: the most recent at first,
-    /// then whichever card the pointer or a scroll on the icon last picked.
+    /// The highlighted card: the most recent window at first, then whichever card the
+    /// pointer or a scroll on the icon last picked.
     @Published var selected: CGWindowID?
     /// Beside a side Dock the cards run top to bottom.
     @Published var isVertical = false
@@ -511,7 +510,7 @@ struct WindowCard: View {
                         // A reused card starts its name afresh for each window, not partway
                         // through the last one's slide.
                         .id(window.id)
-                        .modifier(DockLabel())
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(width: Self.inner.width, height: Self.rowHeight)
                 // In the middle of its area, up and down as well as across.
@@ -565,7 +564,7 @@ private struct CardGlassStyle: ButtonStyle {
                 // a fade on the whole card also faded the sliding name out where it stood,
                 // over the name that replaces it.
                 ZStack {
-                    if isHighlighted { CardGlass(isPressed: configuration.isPressed) }
+                    if isHighlighted { CardGlass() }
                 }
                 .animation(animates ? .default : nil, value: isHighlighted)
             }
@@ -574,8 +573,6 @@ private struct CardGlassStyle: ButtonStyle {
 
 /// The selected card: the whole card in the glass of the Dock's name label.
 private struct CardGlass: View {
-    let isPressed: Bool
-
     var body: some View {
         Color.clear.modifier(DockLabelGlass(shape: RoundedRectangle(cornerRadius: WindowCard.cornerRadius, style: .continuous)))
     }
@@ -694,8 +691,6 @@ final class WindowButtonGroup: NSView {
     }
 }
 
-/// A one-line name that ends in "…" when it doesn't fit, and while hovered
-/// slides across to show the rest, pauses, then slides back, until the pointer leaves.
 /// The glass of the Dock's own name label, in any shape.
 ///
 /// The Dock's label sits on the desktop; this sits on the preview's Dock glass. Clear
@@ -721,17 +716,9 @@ private struct DockLabelGlass<S: Shape>: ViewModifier {
     }
 }
 
-/// A window's name with the Dock name label's text: 14-point system text in the standard
-/// label colour, at the left of the title row, just after the window's buttons, and as far in
-/// from the end as the buttons are from the start. The selected card is in the label's
-/// glass as a whole; on the other cards the name sits on the Dock glass alone. The room
-/// is the same either way, so nothing moves as the selection changes.
-private struct DockLabel: ViewModifier {
-    func body(content: Content) -> some View {
-        content.frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
+/// A window's name in the Dock name label's text: 14-point system text in the standard label
+/// colour, from just after the window's buttons. It ends in "…" when it doesn't fit, and on
+/// the selected card slides across to show the rest, pauses, then slides back.
 private struct ScrollingName: View {
     let text: String
     let isScrolling: Bool

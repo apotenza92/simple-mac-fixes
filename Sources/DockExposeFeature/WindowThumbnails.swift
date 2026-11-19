@@ -55,6 +55,13 @@ final class WindowThumbnails {
         }
     }
 
+    /// Forgets pictures of windows not in `ids`, the windows that still exist. Without this
+    /// the pictures of closed windows stayed, about 1 MB each.
+    func keepOnly(_ ids: Set<CGWindowID>) {
+        guard !ids.isEmpty, cache.count > ids.count else { return }
+        cache = cache.filter { ids.contains($0.key) }
+    }
+
     /// A picture taken elsewhere, such as the last frame of a live card.
     func remember(_ image: CGImage, for id: CGWindowID) {
         cache[id] = (image, Date())

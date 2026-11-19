@@ -277,23 +277,26 @@ enum DockHitTest {
 
     nonisolated(unsafe) private static var lastEdgeCheck: TimeInterval = 0
 
+    /// The edge from the last read of the Dock's settings, without a new read.
+    static var lastReadDockEdge: String? {
+        stableMetadataLock.withLock { dockGeometry?.edge }
+    }
+
     /// The Dock can move to another screen edge at any time, and its settings are read
-    /// at most once a second. A pointer at a different edge than the one read reads them
-    /// again at once, at most 4 times a second. Returns true when the edge changed.
-    static func checkDockEdge(near point: CGPoint) -> Bool {
+    /// at most once a second. A pointer at a different edge than the one read starts a
+    /// new read off the main thread, at most 4 times a second. `lastReadDockEdge` gives
+    /// the answer when the read ends.
+    static func checkDockEdge(near point: CGPoint) {
         let now = ProcessInfo.processInfo.systemUptime
         stableMetadataLock.lock()
         let geometry = dockGeometry
         let recentlyChecked = now - lastEdgeCheck < 0.25
         stableMetadataLock.unlock()
-        guard let geometry, !recentlyChecked, let bounds = displayBounds(containing: point) else { return false }
+        guard let geometry, !recentlyChecked, let bounds = displayBounds(containing: point) else { return }
         let edges = [("left", point.x - bounds.minX), ("right", bounds.maxX - point.x), ("bottom", bounds.maxY - point.y)]
-        guard edges.contains(where: { $0.0 != geometry.edge && $0.1 <= geometry.thickness }) else { return false }
-        stableMetadataLock.lock()
-        lastEdgeCheck = now
-        dockGeometry = nil
-        stableMetadataLock.unlock()
-        return dockEdge != geometry.edge
+        guard edges.contains(where: { $0.0 != geometry.edge && $0.1 <= geometry.thickness }) else { return }
+        stableMetadataLock.withLock { lastEdgeCheck = now }
+        refreshDockGeometry()
     }
 
     /// Whether `point` is in the thin strip the Dock bar occupies, from the Dock's
@@ -431,8 +434,17 @@ enum DockHitTest {
     private static func element(at point: CGPoint, inDock: Bool = false) -> AXUIElement? {
         let target = inDock ? dockProcessIdentifier().map(AXUIElementCreateApplication) : nil
         var element: AXUIElement?
-        let result = AXUIElementCopyElementAtPosition(target ?? AXUIElementCreateSystemWide(),
+        var result = AXUIElementCopyElementAtPosition(target ?? AXUIElementCreateSystemWide(),
                                                       Float(point.x), Float(point.y), &element)
+        // A Dock restarted since (Instant Dock restarts it) has a new process; macOS does not
+        // announce it, so the saved one is cleared and the new one asked once.
+        if inDock, result == .cannotComplete || result == .invalidUIElement || result == .notImplemented {
+            invalidateDockProcessCache()
+            if let dock = dockProcessIdentifier() {
+                result = AXUIElementCopyElementAtPosition(AXUIElementCreateApplication(dock),
+                                                          Float(point.x), Float(point.y), &element)
+            }
+        }
         guard result == .success else {
             Logger.debug("AXUIElementCopyElementAtPosition failed with \(result.rawValue)")
             return nil
