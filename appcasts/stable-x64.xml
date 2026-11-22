@@ -3,15 +3,18 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.2.0</title>
-      <sparkle:version>200090000</sparkle:version>
-      <sparkle:shortVersionString>0.2.0</sparkle:shortVersionString>
+      <title>v0.2.1</title>
+      <sparkle:version>200190000</sparkle:version>
+      <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- Clicking an app in the Dock now works exactly as it does without Simple Mac Fixes: it brings the app forward, and the window previews only close.
-- The pointer near the side of the screen no longer makes window previews check the Dock's position in a way that can briefly slow the pointer.
-- Window pictures for closed windows are no longer kept in memory.
+      <description sparkle:format="plain-text">- The pointer no longer stops or jumps when it is over a Dock app that shows window previews.
+- Clicking near the top of a Dock app now brings the app forward while its window previews show.
+- Minimizing a window from its preview keeps a clear picture of it, and the preview stays open.
+- Minimized windows and windows of a hidden app now say "Minimized" or "Hidden", and they no longer appear full size on the screen when you point at them.
+- The Dock no longer shows an app's name under its window previews while you scroll on the app to pick a window.
+- Mouse wheel scrolling no longer waits while the app is busy.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.2.0/Simple-Mac-Fixes-v0.2.0-macos-x64.zip" length="3789747" type="application/octet-stream" sparkle:edSignature="1g4YwqS6vUhmtn1HIo87RCwG6o49meHtV88vFPd/lchZ4m99aVwfBKGI4ftVJ87AW6l8BmFH1KIw1cEZuDLQAg==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.2.1/Simple-Mac-Fixes-v0.2.1-macos-x64.zip" length="3789484" type="application/octet-stream" sparkle:edSignature="SlSLPKWCaAatRAKoNpGuJFMp36JyLmK7siydf/9xOm9JZJm1QvXqO//+C8zoIjjbvGA2b0dN7qitHZrANydUAA==" />
     </item>
   </channel>
 </rss>
