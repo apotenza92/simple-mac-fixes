@@ -35,7 +35,8 @@ public enum MouseScrollReversal {
 }
 
 public final class MouseScrollReversalFeature {
-    private lazy var tap = EventTap(types: [.scrollWheel]) { _, event in
+    /// On its own thread: it keeps no state, and every wheel event waits for it.
+    private lazy var tap = EventTap(types: [.scrollWheel], ownThread: true) { _, event in
         Self.process(event)
         return true
     }

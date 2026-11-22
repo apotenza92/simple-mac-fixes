@@ -6,7 +6,7 @@ import ApplicationServices
 public struct DockWindow: Identifiable, Equatable {
     public enum Place: Equatable {
         case here
-        case otherDesktop(number: Int?, spaceID: UInt64)
+        case otherDesktop
         case minimized
         case hidden
     }
@@ -16,6 +16,13 @@ public struct DockWindow: Identifiable, Equatable {
     public let title: String
     public let place: Place
     let bounds: CGRect
+
+    /// On a screen now, on this desktop or another one: not minimized, and not in a hidden app.
+    var isOnScreen: Bool { place == .here || place == .otherDesktop }
+
+    func moved(to place: Place) -> DockWindow {
+        DockWindow(id: id, processIdentifier: processIdentifier, title: title, place: place, bounds: bounds)
+    }
 }
 
 /// Finds every window worth showing for an app. Safe off the main thread.
@@ -56,7 +63,6 @@ enum DockWindows {
         let allOnScreen = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []).filter { allPIDs.contains(pid($0)) }
         let visibleSpaces = Set(WindowSpacePrivateApis.activeSpaceIDs().map { Int($0) })
-        let desktops = WindowSpacePrivateApis.desktopNumbers()
 
         var results: [String: [DockWindow]] = [:]
         for (bundleIdentifier, apps) in appsByBundle {
@@ -99,12 +105,10 @@ enum DockWindows {
                       let window = info[id], window.alpha > 0.01, isBigEnough(window.bounds) else { continue }
                 let spaces = WindowSpacePrivateApis.spaces(for: id)
                 // No space means a helper window that is never shown.
-                guard let space = spaces.first, spaces.isDisjoint(with: visibleSpaces) else { continue }
+                guard !spaces.isEmpty, spaces.isDisjoint(with: visibleSpaces) else { continue }
                 seen.insert(id)
-                let place: DockWindow.Place = hidden
-                    ? .hidden : .otherDesktop(number: desktops[UInt64(space)], spaceID: UInt64(space))
-                result.append(DockWindow(id: id, processIdentifier: pid(entry), title: window.title, place: place,
-                                         bounds: window.bounds))
+                result.append(DockWindow(id: id, processIdentifier: pid(entry), title: window.title,
+                                         place: hidden ? .hidden : .otherDesktop, bounds: window.bounds))
             }
             // Most recent first: windows here front to back, then those on other desktops,
             // then minimized and hidden ones, each group in the window server's order.
@@ -150,16 +154,6 @@ enum DockWindows {
         }
     }
 
-    /// The usable part of the screen holding most of `bounds`, in top-left coordinates.
-    private static func screenFrame(containing bounds: CGRect) -> CGRect? {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        let frames = NSScreen.screens.map { screen -> CGRect in
-            let visible = screen.visibleFrame
-            return CGRect(x: visible.minX, y: primaryHeight - visible.maxY, width: visible.width, height: visible.height)
-        }
-        return frames.max { $0.intersection(bounds).area < $1.intersection(bounds).area }
-    }
-
     /// The accessibility element for a window, to raise or restore it.
     static func element(for window: DockWindow) -> AXUIElement? {
         axWindows(of: window.processIdentifier).first { WindowSpacePrivateApis.windowID(for: $0) == window.id }
@@ -194,8 +188,4 @@ enum DockWindows {
               AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
         return CGRect(origin: origin, size: extent)
     }
-}
-
-private extension CGRect {
-    var area: CGFloat { isNull ? 0 : width * height }
 }

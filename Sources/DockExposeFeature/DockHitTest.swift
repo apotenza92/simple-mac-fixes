@@ -3,7 +3,6 @@ import Cocoa
 struct DockHitTestStableMetadataCache {
     private var cachedDisplayBounds: [CGRect]?
     private var cachedDockProcessIdentifier: pid_t?
-    private var didResolveDockProcessIdentifier = false
     private var bundleIdentifiersByURL: [URL: String] = [:]
 
     mutating func displayBounds(containing point: CGPoint,
@@ -14,14 +13,11 @@ struct DockHitTestStableMetadataCache {
         return cachedDisplayBounds?.first { $0.contains(point) }
     }
 
-    /// The Dock's pid once resolved; the outer optional is nil until then.
-    var dockProcessIdentifier: pid_t?? {
-        didResolveDockProcessIdentifier ? .some(cachedDockProcessIdentifier) : nil
-    }
+    /// The Dock's pid once resolved.
+    var dockProcessIdentifier: pid_t? { cachedDockProcessIdentifier }
 
-    mutating func storeDockProcessIdentifier(_ pid: pid_t?) {
+    mutating func storeDockProcessIdentifier(_ pid: pid_t) {
         cachedDockProcessIdentifier = pid
-        didResolveDockProcessIdentifier = true
     }
 
     func bundleIdentifier(for url: URL) -> String? {
@@ -38,7 +34,6 @@ struct DockHitTestStableMetadataCache {
 
     mutating func invalidateDockProcessIdentifier() {
         cachedDockProcessIdentifier = nil
-        didResolveDockProcessIdentifier = false
         bundleIdentifiersByURL.removeAll()
     }
 }
@@ -53,55 +48,27 @@ enum DockHitTest {
     enum PointKind: Equatable {
         case appDockIcon(String)
         case folderDockItem(URL)
-        case dockBackground
-        case outsideDock
-    }
-
-    private final class StableMetadataObserver {
-        private var workspaceObservers: [NSObjectProtocol] = []
-
-        init() {
-            CGDisplayRegisterReconfigurationCallback(dockHitTestDisplayReconfigurationCallback, nil)
-            let center = NSWorkspace.shared.notificationCenter
-            let invalidateDock: (Notification) -> Void = { notification in
-                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                      app.bundleIdentifier == "com.apple.dock" else { return }
-                DockHitTest.invalidateDockProcessCache()
-            }
-            workspaceObservers.append(center.addObserver(forName: NSWorkspace.didLaunchApplicationNotification,
-                                                         object: nil,
-                                                         queue: .main,
-                                                         using: invalidateDock))
-            workspaceObservers.append(center.addObserver(forName: NSWorkspace.didTerminateApplicationNotification,
-                                                         object: nil,
-                                                         queue: .main,
-                                                         using: invalidateDock))
-        }
-
-        deinit {
-            CGDisplayRemoveReconfigurationCallback(dockHitTestDisplayReconfigurationCallback, nil)
-            for observer in workspaceObservers {
-                NSWorkspace.shared.notificationCenter.removeObserver(observer)
-            }
-        }
     }
 
     private static let stableMetadataLock = NSLock()
-    private static var stableMetadataCache = DockHitTestStableMetadataCache()
-    private static let stableMetadataObserver = StableMetadataObserver()
+    nonisolated(unsafe) private static var stableMetadataCache = DockHitTestStableMetadataCache()
 
-    static func bundleIdentifierAtPoint(_ point: CGPoint) -> String? {
-        if case let .appDockIcon(bundle) = pointKind(at: point) {
-            return bundle
-        }
-        return nil
+    /// Forgets the saved display bounds when the displays change. Called once on the main
+    /// thread when a Dock feature starts. (The Dock's own process is not announced when it
+    /// restarts, so a lookup that fails on it clears it instead; see `element(at:inDock:)`.)
+    @MainActor static func start() {
+        guard !watchesDisplays else { return }
+        watchesDisplays = true
+        CGDisplayRegisterReconfigurationCallback(dockHitTestDisplayReconfigurationCallback, nil)
     }
 
+    @MainActor private static var watchesDisplays = false
+
+    /// The Dock folder or stack under `point`, if any. Asks the whole system, not the Dock:
+    /// the Dock also owns the desktop picture, so only the system can tell a click outside it.
     static func folderURLAtPoint(_ point: CGPoint) -> URL? {
-        if case let .folderDockItem(url) = pointKind(at: point) {
-            return url
-        }
-        return nil
+        guard isInDockStrip(point), case let .folderDockItem(url)? = dockItem(at: point, inDock: false) else { return nil }
+        return url
     }
 
     static func classifyDockItem(subrole: String?, url: URL?) -> PointKind? {
@@ -129,9 +96,8 @@ enum DockHitTest {
     /// Every app icon in the Dock with its frame, in top-left screen coordinates. Asks
     /// the Dock over accessibility, so it runs off the main thread.
     static func appItems() -> [(bundleIdentifier: String, frame: CGRect)] {
-        _ = stableMetadataObserver
-        guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return [] }
-        let application = AXUIElementCreateApplication(dock.processIdentifier)
+        guard let dock = dockProcessIdentifier() else { return [] }
+        let application = AXUIElementCreateApplication(dock)
         var items: [(bundleIdentifier: String, frame: CGRect)] = []
         for list in (attribute(application, for: kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
             for item in (attribute(list, for: kAXChildrenAttribute) as [AXUIElement]?) ?? [] {
@@ -154,14 +120,26 @@ enum DockHitTest {
     /// The running app's Dock icon under `point`, with the icon's frame in
     /// top-left screen coordinates, so a preview can sit next to it.
     static func appIcon(at point: CGPoint) -> (bundleIdentifier: String, frame: CGRect)? {
-        _ = stableMetadataObserver
-        guard isNearDockEdge(point) else { return nil }
-        let point = onIconRow(point)
-        guard let element = element(at: point, inDock: true), isInDockProcess(element) else { return nil }
+        guard isInDockStrip(point) else { return nil }
+        var found: CGRect?
+        guard case let .appDockIcon(bundleIdentifier)? = dockItem(at: onIconRow(point), inDock: true, frame: &found),
+              let found else { return nil }
+        return (bundleIdentifier, found)
+    }
+
+    /// The Dock item at `point`: the element there or the nearest of its parents that is one.
+    private static func dockItem(at point: CGPoint, inDock: Bool) -> PointKind? {
+        var unused: CGRect?
+        return dockItem(at: point, inDock: inDock, frame: &unused)
+    }
+
+    private static func dockItem(at point: CGPoint, inDock: Bool, frame itemFrame: inout CGRect?) -> PointKind? {
+        guard let element = element(at: point, inDock: inDock) else { return nil }
         var current: AXUIElement? = element
         while let item = current, isInDockProcess(item) {
-            if case let .appDockIcon(bundleIdentifier)? = dockItemKind(for: item) {
-                return frame(of: item).map { (bundleIdentifier, $0) }
+            if let kind = dockItemKind(for: item) {
+                itemFrame = frame(of: item)
+                return kind
             }
             current = parent(of: item)
         }
@@ -177,84 +155,6 @@ enum DockHitTest {
         guard AXValueGetValue(position as! AXValue, .cgPoint, &origin),
               AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
         return CGRect(origin: origin, size: extent)
-    }
-
-    static func pointKind(at point: CGPoint) -> PointKind {
-        _ = stableMetadataObserver
-        guard isNearDockEdge(point) else { return .outsideDock }
-        guard let element = element(at: point) else { return .outsideDock }
-        guard isInDockProcess(element) else { return .outsideDock }
-
-        if let pointKind = dockItemKind(for: element) {
-            return pointKind
-        }
-
-        var current: AXUIElement? = parent(of: element)
-        while let el = current, isInDockProcess(el) {
-            if let pointKind = dockItemKind(for: el) {
-                return pointKind
-            }
-            current = parent(of: el)
-        }
-
-        Logger.debug("Hit test resolved Dock background.")
-        return .dockBackground
-    }
-
-    static func neutralBackgroundPoint(near point: CGPoint,
-                                       searchRadius: CGFloat = 120,
-                                       step: CGFloat = 12) -> CGPoint? {
-        // Recovery runs on the event-tap run loop; never scan hundreds of AX points
-        // while a physical release is waiting to be delivered.
-        let deadline = ProcessInfo.processInfo.systemUptime + 0.01
-        if pointKind(at: point) == .dockBackground {
-            return point
-        }
-
-        let offsets = stride(from: CGFloat(0), through: searchRadius, by: step).flatMap { distance -> [CGFloat] in
-            distance == 0 ? [0] : [distance, -distance]
-        }
-
-        // Prefer short cardinal moves first; they are less likely to wander onto a neighboring
-        // Dock item than a diagonal grid search when the pressed icon is large.
-        for distance in stride(from: step, through: searchRadius, by: step) {
-            let candidates = [
-                CGPoint(x: point.x, y: point.y - distance),
-                CGPoint(x: point.x, y: point.y + distance),
-                CGPoint(x: point.x - distance, y: point.y),
-                CGPoint(x: point.x + distance, y: point.y)
-            ]
-            for candidate in candidates {
-                guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
-                if pointKind(at: candidate) == .dockBackground { return candidate }
-            }
-        }
-
-        for dy in offsets {
-            for dx in offsets {
-                if dx == 0, dy == 0 { continue }
-                guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
-                let candidate = CGPoint(x: point.x + dx, y: point.y + dy)
-                if pointKind(at: candidate) == .dockBackground {
-                    return candidate
-                }
-            }
-        }
-
-        // Final coarse fallback for large Dock magnification / spacing cases.
-        for distance in stride(from: searchRadius + step, through: searchRadius + 72, by: 24) {
-            let candidates = [
-                CGPoint(x: point.x, y: point.y - distance),
-                CGPoint(x: point.x - distance, y: point.y),
-                CGPoint(x: point.x + distance, y: point.y)
-            ]
-            for candidate in candidates {
-                guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
-                if pointKind(at: candidate) == .dockBackground { return candidate }
-            }
-        }
-
-        return nil
     }
 
     nonisolated(unsafe) private static var dockGeometry: (edge: String, thickness: CGFloat, magnifies: Bool, expiresAt: TimeInterval)?
@@ -312,17 +212,10 @@ enum DockHitTest {
             refreshDockGeometry()
         }
         if geometry == nil {
-            let domain = "com.apple.dock" as CFString
-            CFPreferencesAppSynchronize(domain)
-            let edge = CFPreferencesCopyAppValue("orientation" as CFString, domain) as? String ?? "bottom"
-            let tile = CFPreferencesCopyAppValue("tilesize" as CFString, domain) as? Double ?? 64
-            var magnified = false
-            if let value = CFPreferencesCopyAppValue("magnification" as CFString, domain) as? NSNumber { magnified = value.boolValue }
-            let large = magnified ? (CFPreferencesCopyAppValue("largesize" as CFString, domain) as? Double ?? tile) : tile
-            geometry = (edge, CGFloat(max(tile, large)) + 24, magnified, now + 1)
-            stableMetadataLock.lock()
-            dockGeometry = geometry
-            stableMetadataLock.unlock()
+            // Only the first time, before any answer to serve meanwhile.
+            let read = readDockGeometry()
+            stableMetadataLock.withLock { dockGeometry = read }
+            geometry = read
         }
         guard let geometry, let bounds = displayBounds(containing: point) else { return false }
         switch geometry.edge {
@@ -342,14 +235,7 @@ enum DockHitTest {
             return true
         }) else { return }
         geometryQueue.async {
-            let domain = "com.apple.dock" as CFString
-            CFPreferencesAppSynchronize(domain)
-            let edge = CFPreferencesCopyAppValue("orientation" as CFString, domain) as? String ?? "bottom"
-            let tile = CFPreferencesCopyAppValue("tilesize" as CFString, domain) as? Double ?? 64
-            var magnified = false
-            if let value = CFPreferencesCopyAppValue("magnification" as CFString, domain) as? NSNumber { magnified = value.boolValue }
-            let large = magnified ? (CFPreferencesCopyAppValue("largesize" as CFString, domain) as? Double ?? tile) : tile
-            let geometry = (edge, CGFloat(max(tile, large)) + 24, magnified, ProcessInfo.processInfo.systemUptime + 1)
+            let geometry = readDockGeometry()
             stableMetadataLock.withLock {
                 dockGeometry = geometry
                 refreshingGeometry = false
@@ -357,10 +243,29 @@ enum DockHitTest {
         }
     }
 
+    /// The Dock's edge, the thickness of its strip (largest icon plus room) and whether it
+    /// magnifies, from its settings; the answer serves for a second.
+    private static func readDockGeometry() -> (edge: String, thickness: CGFloat, magnifies: Bool, expiresAt: TimeInterval) {
+        let domain = "com.apple.dock" as CFString
+        CFPreferencesAppSynchronize(domain)
+        let edge = CFPreferencesCopyAppValue("orientation" as CFString, domain) as? String ?? "bottom"
+        let tile = CFPreferencesCopyAppValue("tilesize" as CFString, domain) as? Double ?? 64
+        let magnifies = (CFPreferencesCopyAppValue("magnification" as CFString, domain) as? NSNumber)?.boolValue ?? false
+        let large = magnifies ? (CFPreferencesCopyAppValue("largesize" as CFString, domain) as? Double ?? tile) : tile
+        return (edge, CGFloat(max(tile, large)) + 24, magnifies, ProcessInfo.processInfo.systemUptime + 1)
+    }
+
     /// The Dock's process, kept until the Dock restarts.
     static func dockProcessIdentifier() -> pid_t? {
-        if let cached = stableMetadataLock.withLock({ stableMetadataCache.dockProcessIdentifier }) { return cached }
-        let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
+        // A saved Dock that has quit since (a restart is not announced) is asked for again.
+        if let cached = stableMetadataLock.withLock({ stableMetadataCache.dockProcessIdentifier }) {
+            if kill(cached, 0) == 0 { return cached }
+            invalidateDockProcessCache()
+        }
+        // Not the Dock that just quit while a restarted one comes up, and no answer is kept
+        // while there is none, so the next call asks again.
+        guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock")
+            .first(where: { !$0.isTerminated && kill($0.processIdentifier, 0) == 0 })?.processIdentifier else { return nil }
         stableMetadataLock.withLock { stableMetadataCache.storeDockProcessIdentifier(pid) }
         return pid
     }
@@ -376,22 +281,6 @@ enum DockHitTest {
         case "right": return CGPoint(x: min(point.x, bounds.maxX - inset), y: point.y)
         default: return CGPoint(x: point.x, y: min(point.y, bounds.maxY - inset))
         }
-    }
-
-    private static func isNearDockEdge(_ point: CGPoint, threshold: CGFloat = 140) -> Bool {
-        // IMPORTANT: `point` is in Quartz global display coordinates (CGEvent.location),
-        // where Y is measured from the top of the display (y grows downward).
-        // Do not use NSScreen frames here (AppKit uses a flipped Y for screen coordinates).
-        guard let bounds = displayBounds(containing: point) else {
-            return false
-        }
-
-        let distLeft = point.x - bounds.minX
-        let distRight = bounds.maxX - point.x
-        let distBottom = bounds.maxY - point.y
-
-        // Dock can be positioned on the left, right, or bottom edge.
-        return distLeft <= threshold || distRight <= threshold || distBottom <= threshold
     }
 
     static func invalidateDisplayBoundsCache() {
@@ -467,14 +356,7 @@ enum DockHitTest {
             Logger.debug("AXUIElementGetPid failed with \(result.rawValue)")
             return false
         }
-        // Resolved outside the lock, which the main thread's Dock strip check also takes.
-        let dockPID: pid_t?
-        if let cached = stableMetadataLock.withLock({ stableMetadataCache.dockProcessIdentifier }) {
-            dockPID = cached
-        } else {
-            dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
-            stableMetadataLock.withLock { stableMetadataCache.storeDockProcessIdentifier(dockPID) }
-        }
+        let dockPID = dockProcessIdentifier()
         if pid == dockPID { return true }
         // The Dock relaunches with a new pid whenever it restarts (Instant Dock
         // does this), and macOS doesn't announce that for background processes.
@@ -496,8 +378,6 @@ enum DockHitTest {
                 Logger.debug("Hit test resolved folder URL: \(url.path)")
             case .appDockIcon(let bundle):
                 Logger.debug("Hit test resolved bundle: \(bundle)")
-            case .dockBackground, .outsideDock:
-                break
             }
             return pointKind
         }

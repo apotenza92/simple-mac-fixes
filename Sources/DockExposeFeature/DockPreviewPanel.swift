@@ -123,6 +123,8 @@ final class DockPreviewPanel: NSPanel {
         isKept = false
         guard !isShown, isVisible else { return }
         orderOut(nil)
+        // A hidden card's long name would keep sliding.
+        model.selected = nil
     }
 
     /// Takes a window kept for the next preview off screen; a closing fade finishes first.
@@ -166,6 +168,15 @@ final class DockPreviewPanel: NSPanel {
         model.appIcon = nil
     }
 
+    /// Whether the window takes clicks, scrolls and hovering: only while the pointer is on
+    /// the glass. The clear room around the glass is still part of the window, and over a
+    /// bottom Dock it covers the top of the icons, so a click there reached this window and
+    /// not the Dock, and the app did not come forward.
+    func takesMouse(_ takes: Bool) {
+        let ignores = !(takes && isShown)
+        if ignoresMouseEvents != ignores { ignoresMouseEvents = ignores }
+    }
+
     /// Shows the panel over the Dock's name label for `icon`, on the side away from the
     /// screen edge the Dock sits on.
     func show(beside icon: CGRect, edge: String, magnified: Bool) {
@@ -181,7 +192,6 @@ final class DockPreviewPanel: NSPanel {
         isKept = false
         isShown = true
         turn += 1
-        ignoresMouseEvents = false
         // At once, also over a fade that is still closing it.
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
@@ -285,13 +295,20 @@ final class DockPreviewPanel: NSPanel {
         if event.type == .scrollWheel, model.scrollLength != nil, !model.isVertical,
            event.scrollingDeltaX == 0, event.scrollingDeltaY != 0,
            let turned = event.cgEvent?.copy() {
-            for (from, to) in [(CGEventField.scrollWheelEventDeltaAxis1, CGEventField.scrollWheelEventDeltaAxis2),
-                               (.scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2),
-                               (.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2)] {
-                turned.setIntegerValueField(to, value: turned.getIntegerValueField(from))
-                turned.setDoubleValueField(to, value: turned.getDoubleValueField(from))
-                turned.setIntegerValueField(from, value: 0)
-                turned.setDoubleValueField(from, value: 0)
+            // Read every value before writing, and write points last: setting the line delta
+            // makes CoreGraphics recompute the others (see `MouseScrollReversal`).
+            let fields: [(from: CGEventField, to: CGEventField)] = [
+                (.scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2),
+                (.scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2),
+                (.scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2)]
+            let values = fields.map { (turned.getIntegerValueField($0.from), turned.getDoubleValueField($0.from)) }
+            for field in fields {
+                turned.setIntegerValueField(field.from, value: 0)
+                turned.setDoubleValueField(field.from, value: 0)
+            }
+            for (field, value) in zip(fields, values) {
+                turned.setIntegerValueField(field.to, value: value.0)
+                turned.setDoubleValueField(field.to, value: value.1)
             }
             if let sideways = NSEvent(cgEvent: turned) { return super.sendEvent(sideways) }
         }
@@ -494,6 +511,16 @@ struct WindowCard: View {
     private static let inner = CGSize(width: size.width - 2 * padding, height: size.height - 2 * padding)
     static let pictureSize = CGSize(width: inner.width, height: inner.height - rowHeight - padding)
 
+    /// Minimized is one window's own state; hidden is the whole app's (Hide in its menu), so
+    /// all its cards say it. A minimized window of a hidden app says Minimized, the step to undo.
+    static func state(of place: DockWindow.Place) -> String? {
+        switch place {
+        case .minimized: "Minimized"
+        case .hidden: "Hidden"
+        case .here, .otherDesktop: nil
+        }
+    }
+
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: Self.padding) {
@@ -527,6 +554,13 @@ struct WindowCard: View {
                     } else if let appIcon {
                         Image(nsImage: appIcon).resizable().frame(width: 48, height: 48).opacity(0.8)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                // A window that is not on the screen says why, and a click brings it back.
+                // Below the app's icon when there is no picture, so the icon still shows.
+                .overlay(alignment: picture == nil && live == nil ? .bottom : .center) {
+                    if let state = Self.state(of: window.place) {
+                        StateLabel(text: state).padding(.bottom, picture == nil && live == nil ? 24 : 0)
                     }
                 }
                 // The picture replaces the app's icon with the system's fade, or at once.
@@ -688,6 +722,21 @@ final class WindowButtonGroup: NSView {
 
     private func lookAgain() {
         for button in buttons where button.responds(to: Self.lookAgain) { button.perform(Self.lookAgain) }
+    }
+}
+
+/// A short word over a card's picture, in the look of the Dock's own name label: 14-point
+/// system text in the label colour, 13.5 points either side, 26 points tall, in its glass.
+private struct StateLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 14))
+            .foregroundStyle(Color(nsColor: .labelColor))
+            .padding(.horizontal, 13.5)
+            .frame(height: 26)
+            .modifier(DockLabelGlass(shape: Capsule()))
     }
 }
 

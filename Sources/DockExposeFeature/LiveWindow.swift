@@ -61,20 +61,35 @@ final class LiveWindow {
         self.thumbnails = thumbnails
     }
 
+    /// Windows that stop playing at once, though the preview still lists them as here.
+    private var frozen: Set<CGWindowID> = []
+
     /// Runs while the preview shows. Call again when its windows change.
     func run() {
         isRunning = true
+        // A frozen window plays again once it is back here after it left.
+        frozen = frozen.filter { id in model.windows.contains { $0.id == id && $0.place == .here } }
         retarget()
     }
 
     func stop() {
         isRunning = false
         hovered = nil
+        frozen = []
+        retarget()
+    }
+
+    /// Stops playing a window that is about to be minimized, before its animation starts. Its
+    /// card keeps the last frame from before: played on, the card showed the window shrinking
+    /// into the Dock, then kept a tiny, blurred capture of the minimized window.
+    func freeze(_ id: CGWindowID) {
+        frozen.insert(id)
         retarget()
     }
 
     private func retarget() {
-        let id = Self.choose(hovered: hovered, windows: isRunning ? model.windows : [])
+        let playable = isRunning ? model.windows.filter { !frozen.contains($0.id) } : []
+        let id = Self.choose(hovered: hovered, windows: playable)
         guard id != target else { return }
         finish()
         guard let id else { return }

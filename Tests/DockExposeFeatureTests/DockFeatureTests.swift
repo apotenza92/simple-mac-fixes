@@ -161,3 +161,16 @@ private let previewFrame = CGRect(x: 400, y: 900, width: 500, height: 200)
     // A new scroll that starts inside the list still stops at the end.
     #expect(DockPreviewsFeature.nextSelection(from: 1, steps: 4, count: 3, newScroll: true) == 2)
 }
+
+@Test func onlyWindowsOffTheScreenSayWhereTheyAre() {
+    #expect(WindowCard.state(of: .minimized) == "Minimized")
+    #expect(WindowCard.state(of: .hidden) == "Hidden")
+    #expect(WindowCard.state(of: .here) == nil)
+    #expect(WindowCard.state(of: .otherDesktop) == nil)
+    // Neither a minimized window nor one of a hidden app is shown in place.
+    func window(_ place: DockWindow.Place) -> DockWindow {
+        DockWindow(id: 1, processIdentifier: 1, title: "1", place: place, bounds: .zero)
+    }
+    #expect(window(.here).isOnScreen && window(.otherDesktop).isOnScreen)
+    #expect(!window(.minimized).isOnScreen && !window(.hidden).isOnScreen)
+}

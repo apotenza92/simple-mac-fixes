@@ -6,10 +6,10 @@ import SwiftUI
 /// minimized ones, windows on other desktops, windows of a hidden app and
 /// small windows such as Settings. Click one to go straight to it.
 ///
-/// A simple take on DockDoor. Clicks and scrolls are only listened to; pointer moves on
-/// the Dock are held back from it only while a preview covers its name label
-/// (`moveAhead`). Every Dock and window lookup runs off the main thread, which also
-/// serves the app's active event taps.
+/// A simple take on DockDoor. Pointer moves, clicks and scrolls are only listened to, so
+/// the feature cannot move or stop the pointer; only moves on their way to the Dock alone
+/// are dropped while a preview covers its name label (`dockTap`). Every Dock and window
+/// lookup runs off the main thread, which also serves the app's active event taps.
 @MainActor
 public final class DockPreviewsFeature {
     /// Grace for moving from the icon up to the preview.
@@ -64,10 +64,6 @@ public final class DockPreviewsFeature {
 
     private var port: CFMachPort?
     private var source: CFRunLoopSource?
-    /// The only tap that changes events: it holds pointer moves on the Dock back from it while
-    /// a preview covers its name label. See `moveAhead(to:)`.
-    private var movePort: CFMachPort?
-    private var moveSource: CFRunLoopSource?
     private var spaceObserver: NSObjectProtocol?
 
     private var shownBundle: String?
@@ -81,9 +77,10 @@ public final class DockPreviewsFeature {
     private var dockItems: [(bundleIdentifier: String, frame: CGRect)] = [] {
         didSet { dockBar = dockItems.reduce(CGRect.null) { $0.union($1.frame) } }
     }
-    /// All the Dock's app icons together, for `isOnDockBar` on every move.
+    /// All the Dock's app icons together, for `isOnDockBar`.
     private var dockBar = CGRect.null
     private var dockItemsReadAt: TimeInterval = 0
+    private var wasNearDock = false
     /// Whether the Dock was told the pointer left it, to take its name label down.
     private var hidingDockLabel = false
     /// Looks again at a pointer that stopped where no icon was found yet.
@@ -109,6 +106,7 @@ public final class DockPreviewsFeature {
     @discardableResult
     public func start() -> Bool {
         guard port == nil else { return true }
+        DockHitTest.start()
         DockAutoHideHold.recover()
         let types: [CGEventType] = [.mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
@@ -117,11 +115,7 @@ public final class DockPreviewsFeature {
                 let feature = Unmanaged<DockPreviewsFeature>.fromOpaque(userInfo).takeUnretainedValue()
                 let location = event.location
                 let scroll = type == .scrollWheel ? Scroll(event) : nil
-                MainActor.assumeIsolated {
-                    // A newer move than any held one still waiting to be followed.
-                    if type == .mouseMoved { feature.heldMoves &+= 1 }
-                    feature.handle(type, at: location, scroll: scroll)
-                }
+                MainActor.assumeIsolated { feature.handle(type, at: location, scroll: scroll) }
             }
             return Unmanaged.passUnretained(event)
         }
@@ -133,7 +127,6 @@ public final class DockPreviewsFeature {
         CGEvent.tapEnable(tap: port, enable: true)
         self.port = port
         self.source = source
-        startHoldingMovesBack()
         missionControl.opened = { [weak self] in self?.hide() }
         panel.keyPressed = { [weak self] in self?.hide() }
         // Do everything once now that is slow the first time, so the first preview opens
@@ -171,12 +164,9 @@ public final class DockPreviewsFeature {
         latestPoint = nil
         if let port { CGEvent.tapEnable(tap: port, enable: false); CFMachPortInvalidate(port) }
         if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
-        if let movePort { CGEvent.tapEnable(tap: movePort, enable: false); CFMachPortInvalidate(movePort) }
-        if let moveSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), moveSource, .commonModes) }
-        movePort = nil
-        moveSource = nil
         if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
         missionControl.stop()
+        removeDockTap()
         port = nil
         source = nil
         spaceObserver = nil
@@ -184,6 +174,17 @@ public final class DockPreviewsFeature {
     }
 
     private func control(_ control: DockWindows.Control, on window: DockWindow) {
+        if control != .maximize {
+            // Its window goes from the screen: no live card and no window shown in place.
+            liveWindow.freeze(window.id)
+            if peeking == window.id { endPeek() }
+        }
+        // The card says Minimized at once, with the picture from before; the window lists
+        // still say otherwise while the window moves into the Dock.
+        let minimized = control == .minimize ? window.moved(to: .minimized) : nil
+        if let minimized {
+            panel.model.windows = panel.model.windows.map { $0.id == window.id ? minimized : $0 }
+        }
         let optionPressed = NSEvent.modifierFlags.contains(.option)
         let pressGreenButton = pressGreenButton
         actionQueue.async { [weak self] in
@@ -194,25 +195,32 @@ public final class DockPreviewsFeature {
             } else {
                 DockWindows.perform(control, on: window)
             }
-            // Show the result straight away, and again once any animation, such as
-            // minimizing, has finished.
-            for delay in [0, 0.5] {
+            // Show the result straight away, and again once any animation has finished. A
+            // window moving into the Dock (about 0.5 s) is missing from the lists or still
+            // here, so a minimize is read only after it.
+            for delay in control == .minimize ? [0.6, 1.2] : [0, 0.5] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                     MainActor.assumeIsolated {
                         guard let self else { return }
-                        self.thumbnails.expire(window.id)
+                        // A minimized window keeps the picture from before: it cannot be
+                        // captured once it is in the Dock.
+                        if control != .minimize { self.thumbnails.expire(window.id) }
                         self.fullPictures[window.id] = nil
-                        self.refreshShown()
+                        self.refreshShown(keeping: minimized)
                     }
                 }
             }
         }
     }
 
-    private func refreshShown() {
+    /// Reads the shown app's windows again. `kept`, a window just minimized from its card,
+    /// stays in the preview even when a read misses it: such a read closed the preview
+    /// under the pointer.
+    private func refreshShown(keeping kept: DockWindow? = nil) {
         guard let bundleIdentifier = shownBundle, let icon = shownIcon else { return }
         lookupQueue.async { [weak self, recentWindows] in
-            let windows = recentWindows.windows(of: bundleIdentifier, maxAge: 0)
+            var windows = recentWindows.windows(of: bundleIdentifier, maxAge: 0)
+            if let kept, !windows.contains(where: { $0.id == kept.id }) { windows.append(kept) }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, self.shownBundle == bundleIdentifier else { return }
@@ -269,6 +277,8 @@ public final class DockPreviewsFeature {
         let now = ProcessInfo.processInfo.systemUptime
         motion.append((point, now))
         motion.removeAll { now - $0.time > Self.headingWindow }
+        // Before anything else, so the next click goes to the right window.
+        panel.takesMouse(isOnPanel(point))
         if missionControl.isOpen {
             latestPoint = nil
             if panel.isShown { hide() }
@@ -292,14 +302,19 @@ public final class DockPreviewsFeature {
                 refreshDockItems()
             }
         }
-        if now - lastReadAhead > 0.1, DockHitTest.isInDockStrip(point, margin: Self.readAheadDistance) {
+        let nearDock = DockHitTest.isInDockStrip(point, margin: Self.readAheadDistance)
+        // The Dock moves its icons while the pointer is elsewhere, as apps open and quit
+        // and windows go into it and come back, so they are read again on each approach.
+        if nearDock, !wasNearDock { refreshDockItems() }
+        wasNearDock = nearDock
+        if now - lastReadAhead > 0.1, nearDock {
             lastReadAhead = now
             readAhead()
         }
+        updateDockTap(near: point)
         let inDockStrip = DockHitTest.isInDockStrip(point)
         // The way from the icon to the preview, past the Dock's name bubble, keeps it open too.
-        if panel.isShown, panelFrame.insetBy(dx: -4, dy: -4).contains(point)
-            || (!inDockStrip && bridgeFrame.contains(point)) {
+        if panel.isShown, isOnPanel(point) || (!inDockStrip && bridgeFrame.contains(point)) {
             cancelClose()
             cancelAim()
             return
@@ -320,15 +335,18 @@ public final class DockPreviewsFeature {
     }
 
     /// The preview covers the Dock's name label, but its glass is the Dock's own, which
-    /// lets the label show through. Without magnification, after each move tell the Dock
-    /// the pointer has left, so it takes the label down. Only the Dock is told: the real
+    /// lets the label show through. Without magnification, tell the Dock alone that the
+    /// pointer left, so it takes the label down, and keep later moves from reaching the Dock
+    /// while the preview shows (`dockTap`), so it does not put the label back. The real
     /// pointer stays on the icon and its clicks still reach the Dock. With magnification
     /// that would shrink the icon under the pointer, so there the label stays.
     private func hideDockLabel() {
         guard panel.isShown, !DockHitTest.dockMagnifies else { return }
+        let first = !hidingDockLabel
         hidingDockLabel = true
-        // A held move already told the Dock.
-        guard !followingHeldMove else { return }
+        tapDockMoves()
+        // With the tap, the Dock gets no later move that would put the label back.
+        guard first || dockTap == nil else { return }
         // After this event has reached the Dock, so the Dock's answer to it comes first;
         // not once the preview closed, which sent the Dock where the pointer really is.
         DispatchQueue.main.async { [weak self] in
@@ -337,95 +355,122 @@ public final class DockPreviewsFeature {
         }
     }
 
-    /// Pointer moves on the Dock only, never clicks or scrolls. Without this tap the feature
-    /// still works; the label then shows through.
-    private func startHoldingMovesBack() {
+    /// A tap on the pointer moves that macOS delivers to the Dock alone (`dropsDockMove`).
+    /// The pointer on screen has moved before the Dock gets a move, so this never stops it.
+    /// (A tap on all moves that held them back from the Dock, v0.1.x–v0.2.0, stopped the
+    /// pointer on screen too, and it froze and then jumped; putting it back with a warp made
+    /// macOS ignore the mouse after each warp.) It is on only while the pointer is near the
+    /// Dock or a preview shows, and never with magnification, so the Dock's moves do not wait
+    /// for this app otherwise. A Dock that restarted has a new process, so the tap is made
+    /// again for it.
+    private var dockTap: (pid: pid_t, port: CFMachPort, source: CFRunLoopSource)?
+
+    private func updateDockTap(near point: CGPoint) {
+        if !DockHitTest.dockMagnifies, DockHitTest.isInDockStrip(point, margin: Self.readAheadDistance) {
+            tapDockMoves()
+        } else if !panel.isShown {
+            pauseDockTap()
+        }
+    }
+
+    /// Whether the Dock must not get this move, so it shows no name label under a preview.
+    /// While a preview shows, no move along the icons reaches it: neither the previewed app's
+    /// label nor that of an app the pointer moved on to shows. A move onto an icon whose
+    /// preview opens from memory does not reach it either, and the Dock is told the pointer
+    /// left: the Dock drew its label for a few frames before the preview showed.
+    private func dropsDockMove(at point: CGPoint) -> Bool {
+        guard !DockHitTest.dockMagnifies, isOnDockBar(point) else { return false }
+        if panel.isShown { return hidingDockLabel }
+        guard !missionControl.isOpen, !MissionControlWatch.lastKnownIsShowing,
+              let item = DockHitTest.appItem(at: point, in: dockItems), item.bundleIdentifier != clickedBundle,
+              (recentWindows.cachedWindowsToOpen(item.bundleIdentifier)?.count ?? 0) > 1 else { return false }
+        DispatchQueue.main.async { Self.postToDock(Self.offScreen) }
+        return true
+    }
+
+    /// A scroll on the Dock while a preview shows belongs to the preview, which picks a
+    /// window with it. The Dock showed its name label for the pointer's place on each one,
+    /// through the glass, and it can also open its own window overview on a scroll.
+    private func dropsDockScroll(at point: CGPoint) -> Bool {
+        !DockHitTest.dockMagnifies && panel.isShown && hidingDockLabel && isOnDockBar(point)
+    }
+
+    private func tapDockMoves() {
+        guard let pid = DockHitTest.dockProcessIdentifier() else { return }
+        if let dockTap, dockTap.pid == pid {
+            if !dockTapIsOn {
+                dockTapIsOn = true
+                CGEvent.tapEnable(tap: dockTap.port, enable: true)
+            }
+            return
+        }
+        removeDockTap()
         let callback: CGEventTapCallBack = { _, type, event, userInfo in
             guard let userInfo else { return Unmanaged.passUnretained(event) }
             let feature = Unmanaged<DockPreviewsFeature>.fromOpaque(userInfo).takeUnretainedValue()
             if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-                MainActor.assumeIsolated { if let port = feature.movePort { CGEvent.tapEnable(tap: port, enable: true) } }
+                MainActor.assumeIsolated {
+                    if feature.dockTapIsOn, let port = feature.dockTap?.port { CGEvent.tapEnable(tap: port, enable: true) }
+                }
                 return Unmanaged.passUnretained(event)
             }
-            guard type == .mouseMoved else { return Unmanaged.passUnretained(event) }
+            // This app's own messages to the Dock go through.
+            guard type == .mouseMoved || type == .scrollWheel,
+                  event.getIntegerValueField(.eventSourceUserData) != DockPreviewsFeature.ownEvent else {
+                return Unmanaged.passUnretained(event)
+            }
             let location = event.location
-            let holdBack = MainActor.assumeIsolated { feature.moveAhead(to: location) }
-            return holdBack ? nil : Unmanaged.passUnretained(event)
+            let drop = MainActor.assumeIsolated {
+                type == .scrollWheel ? feature.dropsDockScroll(at: location) : feature.dropsDockMove(at: location)
+            }
+            return drop ? nil : Unmanaged.passUnretained(event)
         }
-        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
-                                           eventsOfInterest: CGEventMask(1) << CGEventType.mouseMoved.rawValue,
-                                           callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return }
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
+        let mask = CGEventMask(1) << CGEventType.mouseMoved.rawValue | CGEventMask(1) << CGEventType.scrollWheel.rawValue
+        guard let port = CGEvent.tapCreateForPid(pid: pid, place: .headInsertEventTap, options: .defaultTap,
+                                                 eventsOfInterest: mask,
+                                                 callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque()),
+              let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0) else { return }
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: port, enable: true)
-        movePort = port
-        moveSource = source
+        dockTap = (pid, port, source)
+        dockTapIsOn = true
     }
 
-    /// How long a closed preview's window stays on screen, see-through, while the pointer
-    /// is on the Dock.
-    private static let keepClosedPanel: TimeInterval = 0.3
+    private var dockTapIsOn = false
 
-    /// Counts pointer moves, so a move held back from the Dock is followed only if no newer
-    /// one came since: a held move is followed just after the tap returns, and the listening
-    /// tap may have followed a newer one meanwhile. (Ordering moves by their timestamps was
-    /// easier to get wrong: events from different sources need not share a clock.)
-    private var heldMoves = 0
-    /// The move being followed was held back, and the Dock was already told the pointer left.
-    private var followingHeldMove = false
-
-    /// Follows a move held back from the Dock, unless a newer one came since.
-    private func followHeldMove(to point: CGPoint) {
-        heldMoves &+= 1
-        let move = heldMoves
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.heldMoves == move else { return }
-            self.followingHeldMove = true
-            self.handle(.mouseMoved, at: point, scroll: nil)
-            self.followingHeldMove = false
-        }
-    }
-
-    /// Follows a move on the Dock before the Dock sees it, so the preview opens, changes or
-    /// closes first. While a preview then shows, the Dock does not get the move and is told
-    /// the pointer left, so it shows no name label under the preview: not the previewed
-    /// app's, nor the one of an app the pointer moved on to. Letting the Dock see moves to
-    /// other icons showed their labels through the glass until a lookup closed the preview,
-    /// and a pointer jumping onto an app showed that app's label until the preview opened.
-    /// With the preview closed, the move reaches the Dock as usual; one that closes later
-    /// sends the Dock the real position as it closes (`hide`). Without magnification only:
-    /// the Dock does nothing else with these moves, and the pointer itself still moves.
-    ///
-    /// The tap only decides, from what is known already; the preview's work follows straight
-    /// after it returns. Every pointer move on the Mac waits for this tap, and opening a
-    /// preview in it held them all for 7–11 ms.
-    private func moveAhead(to point: CGPoint) -> Bool {
-        guard !DockHitTest.dockMagnifies, DockHitTest.isInDockStrip(point), isOnDockBar(point) else { return false }
-        // Moves over the preview's own edge are its own.
-        if panel.isShown, panelFrame.insetBy(dx: -4, dy: -4).contains(point) { return false }
-        let item = DockHitTest.appItem(at: point, in: dockItems)
-        let opensHere = !missionControl.isOpen && !MissionControlWatch.lastKnownIsShowing
-            && item?.bundleIdentifier != clickedBundle
-            && (item.flatMap { recentWindows.cachedWindowsToOpen($0.bundleIdentifier) }?.count ?? 0) > 1
-        guard panel.isShown || opensHere else { return false }
-        hidingDockLabel = true
-        Self.postToDock(Self.offScreen)
-        followHeldMove(to: point)
-        return true
+    private func pauseDockTap() {
+        guard let dockTap, dockTapIsOn else { return }
+        dockTapIsOn = false
+        CGEvent.tapEnable(tap: dockTap.port, enable: false)
     }
 
     /// Along the Dock's icons, with room for its folders and the Bin, but not the rest of
     /// the screen's edge, where hot corners need their moves.
     private func isOnDockBar(_ point: CGPoint) -> Bool {
         guard !dockBar.isNull else { return true }
-        let bar = dockBar
         let here = DockHitTest.onIconRow(point)
         let room: CGFloat = 160
         switch DockHitTest.dockEdge {
-        case "left", "right": return here.y >= bar.minY - room && here.y <= bar.maxY + room
-        default: return here.x >= bar.minX - room && here.x <= bar.maxX + room
+        case "left", "right": return here.y >= dockBar.minY - room && here.y <= dockBar.maxY + room
+        default: return here.x >= dockBar.minX - room && here.x <= dockBar.maxX + room
         }
     }
+
+    private func removeDockTap() {
+        guard let dockTap else { return }
+        CGEvent.tapEnable(tap: dockTap.port, enable: false)
+        CFMachPortInvalidate(dockTap.port)
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), dockTap.source, .commonModes)
+        self.dockTap = nil
+        dockTapIsOn = false
+    }
+
+    /// Marks this app's own messages to the Dock, so `dockTap` lets them through.
+    nonisolated private static let ownEvent: Int64 = 0x534D_4644 // "SMFD"
+
+    /// How long a closed preview's window stays on screen, see-through, while the pointer
+    /// is on the Dock.
+    private static let keepClosedPanel: TimeInterval = 0.3
 
     /// A point on no screen.
     private static let offScreen = CGPoint(x: -500, y: -500)
@@ -457,9 +502,11 @@ public final class DockPreviewsFeature {
 
     /// A pointer move sent to the Dock alone; the real pointer stays where it is.
     private static func postToDock(_ point: CGPoint) {
-        guard let dock = DockHitTest.dockProcessIdentifier() else { return }
-        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?
-            .postToPid(dock)
+        guard let dock = DockHitTest.dockProcessIdentifier(),
+              let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point,
+                                  mouseButton: .left) else { return }
+        event.setIntegerValueField(.eventSourceUserData, value: ownEvent)
+        event.postToPid(dock)
     }
 
     /// One lookup at a time; the newest pointer position goes next.
@@ -677,6 +724,7 @@ public final class DockPreviewsFeature {
         peek.animates = animates
         steadyReads = 0
         panel.show(beside: icon.frame, edge: DockHitTest.dockEdge, magnified: DockHitTest.dockMagnifies)
+        if let pointer = CGEvent(source: nil)?.location { panel.takesMouse(isOnPanel(pointer)) }
         DockAutoHideHold.hold()
         if !sameVisit { hideDockLabel() }
         watchForMissionControl()
@@ -737,8 +785,8 @@ public final class DockPreviewsFeature {
         return kept + updated.filter { !keptIDs.contains($0.id) }
     }
 
-    /// Long enough for the Dock to finish bringing the app forward.
-    private static let afterDockClick: TimeInterval = 0.15
+    /// Long enough for an app to finish coming forward.
+    private static let afterActivation: TimeInterval = 0.15
     /// Trackpad travel, in points, that moves the selection by one window.
     nonisolated private static let scrollStep: CGFloat = 30
 
@@ -815,18 +863,20 @@ public final class DockPreviewsFeature {
         let work = DispatchWorkItem { [weak self] in
             guard let self, self.panel.isShown,
                   let window = self.panel.model.windows.first(where: { $0.id == self.panel.model.selected }) else { return }
-            // A minimized or hidden window stays put: scrolling only shows it in place,
-            // and clicking its card brings it back.
-            if window.place == .minimized || window.place == .hidden {
-                self.showPeek(window)
+            // A minimized or hidden window stays put: scrolling only selects its card, and
+            // clicking the card brings it back.
+            if !window.isOnScreen {
+                self.endPeek()
                 return
             }
             self.endPeek()
             self.choose(window, keepOpen: true)
             // The app coming forward takes key from the panel, which would frost its glass.
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.afterDockClick) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.afterActivation) { [weak self] in
                 guard let self, self.panel.isShown else { return }
                 self.panel.makeKey()
+                // The Dock can put its label back as the app comes forward, with no move.
+                if self.hidingDockLabel { Self.postToDock(Self.offScreen) }
             }
         }
         scrollPick = work
@@ -1010,6 +1060,9 @@ public final class DockPreviewsFeature {
     /// The panel's frame in the top-left coordinates of mouse events.
     private var panelFrame: CGRect { topLeft(panel.glassFrame) }
 
+    /// On the preview's glass, or within 4 points of it.
+    private func isOnPanel(_ point: CGPoint) -> Bool { panelFrame.insetBy(dx: -4, dy: -4).contains(point) }
+
     /// The icon, the preview and the gap between them.
     private var bridgeFrame: CGRect {
         guard let shownIcon, !panelFrame.isNull else { return .null }
@@ -1072,6 +1125,11 @@ public final class DockPreviewsFeature {
 
     private func showPeek(_ window: DockWindow) {
         peekWork = nil
+        // A minimized or hidden window is not on the screen, so it is not shown there either.
+        guard window.isOnScreen else {
+            if peeking != nil { endPeek() }
+            return
+        }
         // The window already in front is already there to see.
         if window.place == .here, Self.isFrontWindow(window.id) {
             if peeking != nil { endPeek() }
@@ -1084,7 +1142,7 @@ public final class DockPreviewsFeature {
               let image = fullPictures[window.id] ?? live ?? panel.model.pictures[window.id] ?? thumbnails.cached(window.id)
         else { return }
         peeking = window.id
-        peek.show(image, at: window.bounds, dimmed: window.place == .minimized || window.place == .hidden)
+        peek.show(image, at: window.bounds)
         guard fullPictures[window.id] == nil, live == nil else { return }
         let scale = NSScreen.screens.first { $0.frame.intersects(window.bounds) }?.backingScaleFactor ?? 2
         peekTask?.cancel()

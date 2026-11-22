@@ -53,33 +53,44 @@ final class MissionControlWatch {
     var opened: (() -> Void)?
 
     private var observer: AXObserver?
-    private var dockObservers: [NSObjectProtocol] = []
+    /// Ends with the Dock's process. macOS does not announce a Dock that restarts (Instant
+    /// Dock restarts it), so without this the notices of the old Dock were watched for ever.
+    private var dockExit: DispatchSourceProcess?
+    private var isRunning = false
 
     func start() {
-        guard dockObservers.isEmpty else { return }
-        let center = NSWorkspace.shared.notificationCenter
-        // A restarted Dock is a new process with nothing open.
-        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
-            dockObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
-                guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                      app.bundleIdentifier == "com.apple.dock" else { return }
-                MainActor.assumeIsolated { self?.observeDock() }
-            })
-        }
+        guard !isRunning else { return }
+        isRunning = true
         observeDock()
     }
 
     func stop() {
-        dockObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
-        dockObservers = []
+        isRunning = false
         detach()
         isOpen = false
     }
 
-    private func observeDock() {
+    /// Watches the running Dock, or looks again shortly while a restarted one is not up yet.
+    private func observeDock(attempt: Int = 0) {
         detach()
         isOpen = false
-        guard let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first else { return }
+        guard isRunning else { return }
+        guard let dock = DockHitTest.dockProcessIdentifier() else {
+            if attempt < 20 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.observeDock(attempt: attempt + 1) }
+            }
+            return
+        }
+        // A restarted Dock is a new process with nothing open.
+        let exit = DispatchSource.makeProcessSource(identifier: dock, eventMask: .exit, queue: .main)
+        exit.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                DockHitTest.invalidateDockProcessCache()
+                self?.observeDock()
+            }
+        }
+        exit.resume()
+        dockExit = exit
         var created: AXObserver?
         let callback: AXObserverCallback = { _, _, notification, refcon in
             guard let refcon else { return }
@@ -87,8 +98,8 @@ final class MissionControlWatch {
             let name = notification as String
             MainActor.assumeIsolated { watch.received(name) }
         }
-        guard AXObserverCreate(dock.processIdentifier, callback, &created) == .success, let created else { return }
-        let element = AXUIElementCreateApplication(dock.processIdentifier)
+        guard AXObserverCreate(dock, callback, &created) == .success, let created else { return }
+        let element = AXUIElementCreateApplication(dock)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         for name in Self.openNotifications.union([Self.closeNotification]) {
             AXObserverAddNotification(created, element, name as CFString, refcon)
@@ -98,6 +109,8 @@ final class MissionControlWatch {
     }
 
     private func detach() {
+        dockExit?.cancel()
+        dockExit = nil
         guard let observer else { return }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         self.observer = nil

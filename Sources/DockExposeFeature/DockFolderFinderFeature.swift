@@ -22,6 +22,7 @@ public final class DockFolderFinderFeature {
     @discardableResult
     public func start() -> Bool {
         guard port == nil else { return true }
+        DockHitTest.start()
         let mask = [CGEventType.leftMouseDown, .leftMouseDragged, .leftMouseUp]
             .reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         let callback: CGEventTapCallBack = { _, type, event, userInfo in

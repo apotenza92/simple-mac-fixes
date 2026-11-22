@@ -34,15 +34,14 @@ final class WindowPeek: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// `bounds` is in the top-left coordinates of mouse events. A dimmed peek is for a
-    /// window that isn't really there right now, minimized or hidden, as its card shows.
-    func show(_ image: CGImage, at bounds: CGRect, dimmed: Bool) {
+    /// `bounds` is in the top-left coordinates of mouse events. Never for a minimized or hidden
+    /// window, which is not on the screen.
+    func show(_ image: CGImage, at bounds: CGRect) {
         let height = NSScreen.screens.first?.frame.height ?? 0
         let frame = CGRect(x: bounds.minX, y: height - bounds.maxY, width: bounds.width, height: bounds.height)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         picture.contents = image
-        picture.opacity = dimmed ? 0.6 : 1
         picture.frame = CGRect(origin: .zero, size: frame.size)
         CATransaction.commit()
         if self.frame != frame { setFrame(frame, display: false) }
