@@ -94,6 +94,70 @@ final class TitleBarInterceptionControllerTests: XCTestCase {
         XCTAssertEqual(cursorLocation, CGPoint(x: 108, y: 30))
     }
 
+    func testHeldWindowComesAwayAfterTheSystemsDistance() {
+        let resolver = TitleBarResolverSpy()
+        resolver.context = Self.makeContext()
+        let controller = TitleBarInterceptionController(
+            contextResolver: resolver,
+            managedStateChecker: ManagedStateCheckerSpy(isManagedMaximized: true),
+            diagnostics: DebugDiagnostics(),
+            maxMovement: 4
+        )
+
+        _ = controller.handleMouseDown(
+            location: CGPoint(x: 100, y: 30),
+            clickCount: 1,
+            configuration: InterceptionConfiguration(selectedAction: .maximize, diagnosticsEnabled: false)
+        )
+        XCTAssertNotNil(controller.pendingDragContext)
+        controller.holdPendingDrag()
+
+        // A slow drag: 100 points a second.
+        let start = ProcessInfo.processInfo.systemUptime + 1
+        for step in 1...34 {
+            let decision = controller.handleMouseDragged(
+                location: CGPoint(x: 100 + CGFloat(step), y: 30),
+                time: start + Double(step) * 0.01
+            )
+            guard case .passThrough = decision else {
+                return XCTFail("The window came away after \(step) points")
+            }
+        }
+        let decision = controller.handleMouseDragged(location: CGPoint(x: 135, y: 30), time: start + 0.35)
+        guard case .dragRestore(_, let cursorLocation) = decision else {
+            return XCTFail("Expected dragRestore decision")
+        }
+        XCTAssertEqual(cursorLocation, CGPoint(x: 135, y: 30))
+        XCTAssertNil(controller.pendingDragContext)
+    }
+
+    func testHeldWindowComesAwaySoonerInAFastDrag() {
+        let resolver = TitleBarResolverSpy()
+        resolver.context = Self.makeContext()
+        let controller = TitleBarInterceptionController(
+            contextResolver: resolver,
+            managedStateChecker: ManagedStateCheckerSpy(isManagedMaximized: true),
+            diagnostics: DebugDiagnostics(),
+            maxMovement: 4
+        )
+
+        _ = controller.handleMouseDown(
+            location: CGPoint(x: 100, y: 30),
+            clickCount: 1,
+            configuration: InterceptionConfiguration(selectedAction: .maximize, diagnosticsEnabled: false)
+        )
+        controller.holdPendingDrag()
+
+        // 800 points a second.
+        let start = ProcessInfo.processInfo.systemUptime + 1
+        guard case .passThrough = controller.handleMouseDragged(location: CGPoint(x: 108, y: 30), time: start + 0.01) else {
+            return XCTFail("The window came away after 8 points")
+        }
+        guard case .dragRestore = controller.handleMouseDragged(location: CGPoint(x: 116, y: 30), time: start + 0.02) else {
+            return XCTFail("Expected dragRestore decision")
+        }
+    }
+
     func testDragRestoreStillArmsWhenFullScreenSelectedButWindowIsManagedMaximized() {
         let resolver = TitleBarResolverSpy()
         resolver.context = Self.makeContext()

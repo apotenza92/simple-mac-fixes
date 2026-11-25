@@ -99,6 +99,21 @@ struct SettingsView: View {
                 // A fix that needs another sits under it, and waits while that's off.
                 .padding(.leading, feature.parent == nil ? 0 : 20)
                 .disabled(feature.parent.map { !features.isActive($0) } ?? false)
+                if feature == .greenButtonMaximize {
+                    Picker(selection: Binding(
+                        get: { features.maximizeGap },
+                        set: { features.maximizeGap = $0 }
+                    )) {
+                        ForEach(MaximizeGap.allCases, id: \.self) { gap in
+                            Text(gap.title).tag(gap)
+                        }
+                    } label: {
+                        Text("Gap around the window")
+                        Text("Leaves space between a maximized window and the edges of the screen.")
+                    }
+                    .padding(.leading, 20)
+                    .disabled(!features.isActive(.greenButtonMaximize))
+                }
                 if isLastInArea(feature) {
                     conflictNote(for: feature.conflictArea,
                                  active: Feature.allCases.contains { $0.conflictArea == feature.conflictArea && features.isActive($0) })
@@ -283,8 +298,8 @@ struct SettingsView: View {
 extension SettingsTab {
     var size: CGSize { CGSize(width: 520, height: height) }
 
-    /// Tall enough for the tab's usual content; a longer one scrolls. The window takes
-    /// each tab's height as it changes tab, as the system's own Settings windows do.
+    /// Used only when the tab's content cannot be measured: the window takes the height of
+    /// each tab's content as it changes tab (`SettingsTabsController.fittedSize`).
     var height: CGFloat {
         switch self {
         case .general: 620
@@ -347,7 +362,9 @@ final class SettingsWindowController {
             window.styleMask = [.titled, .closable]
             window.toolbarStyle = .preference
             window.isReleasedWhenClosed = false
-            window.setContentSize((saved ?? .general).size)
+            let first = saved ?? .general
+            let firstItem = tabs.tabViewItems[SettingsTab.allCases.firstIndex(of: first) ?? 0]
+            window.setContentSize(SettingsTabsController.fittedSize(of: firstItem, tab: first, in: window))
             window.center()
             self.window = window
         }
@@ -369,10 +386,11 @@ private final class SettingsTabsController: NSTabViewController {
         super.tabView(tabView, didSelect: tabViewItem)
         guard let id = tabViewItem?.identifier as? String, let tab = SettingsTab(rawValue: id) else { return }
         selectionChanged(tab)
-        guard let window = view.window, window.isVisible else { return }
+        guard let window = view.window, window.isVisible, let tabViewItem else { return }
+        let size = Self.fittedSize(of: tabViewItem, tab: tab, in: window)
         let content = window.contentRect(forFrameRect: window.frame)
-        let frame = window.frameRect(forContentRect: CGRect(x: content.minX, y: content.maxY - tab.size.height,
-                                                            width: tab.size.width, height: tab.size.height))
+        let frame = window.frameRect(forContentRect: CGRect(x: content.minX, y: content.maxY - size.height,
+                                                            width: size.width, height: size.height))
         guard frame != window.frame else { return }
         if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             window.setFrame(frame, display: true)
@@ -383,6 +401,32 @@ private final class SettingsTabsController: NSTabViewController {
             context.allowsImplicitAnimation = true
             window.animator().setFrame(frame, display: true)
         }
+    }
+}
+
+extension SettingsTabsController {
+    /// The tab's content height, so nothing scrolls, up to what fits on the window's screen.
+    /// Measured each time, since a note can come or go. `tab.size` when it cannot be measured.
+    static func fittedSize(of item: NSTabViewItem, tab: SettingsTab, in window: NSWindow?) -> CGSize {
+        // The form scrolls inside its own scroll view, so its fitting size is not its
+        // content's height. The scroll view's content has that height.
+        guard let view = item.viewController?.view else { return tab.size }
+        view.layoutSubtreeIfNeeded()
+        guard let scrollView = Self.scrollView(in: view), let document = scrollView.documentView else { return tab.size }
+        let fitting = document.frame.height + scrollView.contentInsets.top + scrollView.contentInsets.bottom
+            + (view.bounds.height - scrollView.frame.height)
+        guard fitting > 0 else { return tab.size }
+        let toolbar = window.map { $0.frame.height - $0.contentLayoutRect.height } ?? 0
+        let room = (window?.screen ?? NSScreen.main).map { $0.visibleFrame.height - toolbar } ?? .greatestFiniteMagnitude
+        return CGSize(width: tab.size.width, height: min(fitting.rounded(.up), room))
+    }
+
+    private static func scrollView(in view: NSView) -> NSScrollView? {
+        if let scrollView = view as? NSScrollView { return scrollView }
+        for subview in view.subviews {
+            if let found = scrollView(in: subview) { return found }
+        }
+        return nil
     }
 }
 

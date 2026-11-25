@@ -8,7 +8,12 @@ import Foundation
 public final class GreenButtonMaximizeFeature {
     private let diagnostics = DebugDiagnostics()
     private lazy var accessibility = AccessibilityService(diagnostics: diagnostics)
-    private lazy var maximizeStrategy = MaximizeStrategy(frameStore: WindowFrameStore(defaults: .standard), diagnostics: diagnostics)
+    private let gapBox = GapBox()
+    private lazy var maximizeStrategy = MaximizeStrategy(
+        frameStore: WindowFrameStore(defaults: .standard),
+        diagnostics: diagnostics,
+        gap: { [gapBox] in gapBox.value }
+    )
     private lazy var actionEngine = WindowActionEngine(maximizeStrategy: maximizeStrategy, diagnostics: diagnostics)
     private lazy var service = EventTapService(
         accessibilityService: accessibility,
@@ -17,6 +22,7 @@ public final class GreenButtonMaximizeFeature {
         diagnostics: diagnostics
     )
     private var started = false
+    private let electronAccessibility = ElectronAccessibility()
 
     public init() {
         diagnostics.setEnabledProvider { false }
@@ -24,10 +30,20 @@ public final class GreenButtonMaximizeFeature {
 
     public var isRunning: Bool { started }
 
+    /// The space a maximized window leaves to the edges of its screen, in points.
+    /// A window that is maximized already keeps its size until it is maximized again.
+    public var gap: CGFloat {
+        get { gapBox.value }
+        set { gapBox.value = max(0, newValue) }
+    }
+
     @discardableResult
     public func start() -> Bool {
         service.startIfPossible(selectedAction: .maximize, diagnosticsEnabled: false)
         started = service.hasEventTap
+        if started {
+            electronAccessibility.start()
+        }
         return started
     }
 
@@ -46,6 +62,26 @@ public final class GreenButtonMaximizeFeature {
     public func stop() {
         guard started else { return }
         service.stop(reason: nil)
+        electronAccessibility.stop()
         started = false
+    }
+}
+
+/// Read where windows are maximized, off the main thread.
+private final class GapBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: CGFloat = 0
+
+    var value: CGFloat {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return stored
+        }
+        set {
+            lock.lock()
+            stored = newValue
+            lock.unlock()
+        }
     }
 }

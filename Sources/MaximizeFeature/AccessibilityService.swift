@@ -1022,12 +1022,80 @@ final class AccessibilityService: @unchecked Sendable {
     /// Electron apps such as Claude keep their page hidden from Accessibility unless
     /// asked, so a button in a drawn title bar looks the same as empty title bar. The
     /// double-click then goes to the app, which only zooms where the page can be dragged.
+    ///
+    /// Both settings also read off for a page that can be read (seen in T3 Code, Signal
+    /// and Messenger), and such an app does nothing with a double-click when the system
+    /// is set to fill the screen. So the window is searched for its page as well: a page
+    /// that cannot be read is not in the window at all.
     private func pageIsUnreadable(in window: AXUIElement) -> Bool {
         let app = AXUIElementCreateApplication(AXHelpers.pid(of: window))
-        return Self.isElectronPageUnreadable(
+        guard Self.isElectronPageUnreadable(
             manualAccessibility: AXHelpers.boolAttribute("AXManualAccessibility", on: app),
             enhancedUserInterface: AXHelpers.boolAttribute("AXEnhancedUserInterface", on: app)
-        )
+        ) else {
+            return false
+        }
+        let hasPage = {
+            Self.containsWebArea(
+                root: window,
+                children: { AXHelpers.children(of: $0) },
+                role: { AXHelpers.stringAttribute(kAXRoleAttribute as String, on: $0) }
+            )
+        }
+        if hasPage() {
+            return false
+        }
+        // The app shows its page only to an app that asks for it, as screen readers and
+        // window tools do. Without it, a double-click on the title bar could not be told
+        // from one on a button, and went to the system's own fill. So it is asked for
+        // once, and the page is looked for again while the app builds it. The flag then
+        // stays on, so later double-clicks do not come here.
+        _ = AXHelpers.set(boolAttribute: "AXManualAccessibility", value: true, on: app)
+        let deadline = ProcessInfo.processInfo.systemUptime + Self.pageBuildWait
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            Thread.sleep(forTimeInterval: 0.025)
+            if hasPage() {
+                diagnostics.logMessage("Turned on the page's accessibility for pid=\(AXHelpers.pid(of: window)).")
+                return false
+            }
+        }
+        diagnostics.logMessage("Turned on the page's accessibility for pid=\(AXHelpers.pid(of: window)); the page was not ready in time.")
+        return true
+    }
+
+    /// How long a double-click waits for an Electron app to build its page after it is
+    /// asked to. The title-bar question has 0.4 s in all (`BoundedContextResolver`).
+    static let pageBuildWait: TimeInterval = 0.2
+
+    /// The page sits 7 to 8 levels below the window, under views with one or two children
+    /// each. The search goes depth first, so a busy toolbar or sidebar near the top does
+    /// not use up the nodes before the search reaches that depth. It does not go into
+    /// the page.
+    static func containsWebArea<Node>(
+        root: Node,
+        children: (Node) -> [Node],
+        role: (Node) -> String?,
+        maxDepth: Int = 12,
+        maxVisitedNodes: Int = 400
+    ) -> Bool {
+        var stack: [(node: Node, depth: Int)] = [(root, 0)]
+        var visited = 0
+
+        while let current = stack.popLast(), visited < maxVisitedNodes {
+            visited += 1
+            if role(current.node) == "AXWebArea" {
+                return true
+            }
+            guard current.depth < maxDepth else {
+                continue
+            }
+            // Reversed, so the first child is searched first.
+            for child in children(current.node).reversed() {
+                stack.append((child, current.depth + 1))
+            }
+        }
+
+        return false
     }
 
     /// Only Electron answers for `AXManualAccessibility`; other apps report nil.

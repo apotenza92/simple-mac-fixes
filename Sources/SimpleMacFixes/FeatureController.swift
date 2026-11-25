@@ -60,9 +60,20 @@ final class FeatureController: ObservableObject {
         apply()
     }
 
+    /// The space a maximized window leaves to the edges of its screen.
+    var maximizeGap: MaximizeGap {
+        get { .resolve(saved: defaults.object(forKey: MaximizeGap.defaultsKey) as? Int) }
+        set {
+            objectWillChange.send()
+            defaults.set(newValue.rawValue, forKey: MaximizeGap.defaultsKey)
+            greenButtonMaximize.gap = CGFloat(newValue.rawValue)
+        }
+    }
+
     /// Every fix back to how a new install starts.
     func resetToDefaults() {
         objectWillChange.send()
+        defaults.removeObject(forKey: MaximizeGap.defaultsKey)
         for feature in Feature.allCases { defaults.set(feature.enabledByDefault, forKey: feature.defaultsKey) }
         NSWorkspace.shared.runningApplications.forEach(quitIfReplaced)
         apply()
@@ -117,8 +128,13 @@ final class FeatureController: ObservableObject {
         quitIfReplaced(app, attempt: 0)
     }
 
-    /// The old apps always; other utilities only while the fix they overlap is on.
+    /// The old apps always; other utilities only while the fix they overlap is on. A dev
+    /// build also quits the installed release: both catch the same clicks, and the second
+    /// found the window already moved, so a maximize showed no animation.
     private func shouldQuit(_ bundleIdentifier: String) -> Bool {
+        if AppIdentity.isDevelopmentBuild, AppIdentity.releaseBundleIdentifiers.contains(bundleIdentifier) {
+            return true
+        }
         guard let known = ConflictingApp.known.first(where: { $0.matches(bundleIdentifier) }) else { return false }
         return known.isReplaced || Feature.allCases.contains { $0.conflictArea == known.area && isActive($0) }
     }
@@ -142,6 +158,7 @@ final class FeatureController: ObservableObject {
              start: finderCut.start, stop: finderCut.stop)
         sync(.mouseScrollReversal, running: mouseScrollReversal.isRunning, trusted: trusted,
              start: mouseScrollReversal.start, stop: mouseScrollReversal.stop)
+        greenButtonMaximize.gap = CGFloat(maximizeGap.rawValue)
         sync(.greenButtonMaximize, running: greenButtonMaximize.isRunning, trusted: trusted,
              start: greenButtonMaximize.start, stop: greenButtonMaximize.stop)
         // Choosing a window on another desktop jumps there instantly.

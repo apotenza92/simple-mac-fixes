@@ -18,11 +18,14 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
 
     private var configuration: InterceptionConfiguration
     private var bufferedEvents: [CGEvent] = []
+    /// Set while a drag that restored a window's size goes on.
+    private var dragFollower: DragFollower?
     private var holdTimer: DispatchSourceTimer?
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     /// Whether any window is still one this feature maximized, so dragging it could restore it.
     private let hasMaximizedWindows: () -> Bool
+    private let maximizeStrategy: MaximizeStrategy
     private let interceptionTransactionStore = InterceptionTransactionStore()
     private let deferredReplayStore = DeferredReplayStore()
     private lazy var windowMutationMonitor = WindowMutationMonitor(diagnostics: diagnostics) { [weak self] event in
@@ -36,19 +39,25 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
         diagnostics: DebugDiagnostics
     ) {
         self.diagnostics = diagnostics
-        let resolver = BoundedContextResolver(base: accessibilityService)
+        // One for each kind of question: a resolver answers one at a time and lets
+        // clicks through while busy, so a slow title-bar question (any press near the
+        // top of a window while one is maximized) let a green-button click straight
+        // through to the system, which opened full screen (GitHub Desktop, Finder).
+        let greenButtonResolver = BoundedContextResolver(base: accessibilityService)
+        let titleBarResolver = BoundedContextResolver(base: accessibilityService)
         self.controller = GreenButtonInterceptionController(
-            contextResolver: resolver,
+            contextResolver: greenButtonResolver,
             diagnostics: diagnostics
         )
         self.titleBarController = TitleBarInterceptionController(
-            contextResolver: resolver,
+            contextResolver: titleBarResolver,
             managedStateChecker: maximizeStrategy,
             diagnostics: diagnostics
         )
         self.actionPerformer = actionEngine
         self.dragRestorePerformer = maximizeStrategy
         self.hasMaximizedWindows = { maximizeStrategy.hasMaximizedWindows }
+        self.maximizeStrategy = maximizeStrategy
         self.configuration = InterceptionConfiguration(
             selectedAction: .maximize,
             diagnosticsEnabled: false
@@ -158,6 +167,8 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
             bufferedEvents.removeAll()
             controller.reset()
             titleBarController.reset()
+            // A press held when the fix stops would leave the drag gate on.
+            dragRestorePerformer.endDragHold()
             interceptionTransactionStore.removeAll()
             deferredReplayStore.removeAll()
             windowMutationMonitor.removeAll()
@@ -190,6 +201,8 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
                 bufferedEvents.removeAll()
                 controller.reset()
                 titleBarController.reset()
+                // The pending drag is gone, so nothing would end its hold.
+                dragRestorePerformer.endDragHold()
                 self.interceptionTransactionStore.removeAll()
                 deferredReplayStore.removeAll()
                 self.windowMutationMonitor.removeAll()
@@ -221,14 +234,17 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
     }
 
     private func processMouseDown(_ event: CGEvent, configuration: InterceptionConfiguration) -> Unmanaged<CGEvent>? {
+        // A release this tap never saw must not leave the last drag's window following.
+        dragFollower = nil
         if shouldBypassInterception(for: event.location) {
             return Unmanaged.passUnretained(event)
         }
         // Asking the app about a click holds the click until it answers, so only ask
         // when the answer could matter: near the window buttons, on a title-bar
         // double-click, or to drag a maximized window back to its old size.
-        let region = WindowControlZone.region(at: event.location, windows: WindowControlZone.onScreenWindows(),
-                                              displays: WindowControlZone.displayBounds())
+        let windows = WindowControlZone.onScreenWindows()
+        let displays = WindowControlZone.displayBounds()
+        let region = WindowControlZone.region(at: event.location, windows: windows, displays: displays)
         let clickCount = event.getIntegerValueField(.mouseEventClickState)
         guard let region, region == .windowButtons || clickCount >= 2 || hasMaximizedWindows() else {
             controller.reset()
@@ -268,14 +284,26 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
             return Unmanaged.passUnretained(event)
         }
 
+        let pressedWindow = WindowControlZone.window(at: event.location, windows: windows, displays: displays)
+        // A double-click let through goes to the system, which fills the window its
+        // own way (Mail's answer takes about 150 ms, at the edge of the usual limit).
+        let waitsLonger = clickCount >= 2 || pressedWindow.map {
+            maximizeStrategy.hasMaximizedWindow(pid: $0.pid, at: $0.bounds)
+        } ?? false
         let titleBarDecision = titleBarController.handleMouseDown(
             location: event.location,
             clickCount: clickCount,
+            time: Self.seconds(of: event),
+            waitsLonger: waitsLonger,
             configuration: configuration
         )
 
         switch titleBarDecision {
         case .passThrough:
+            if let context = titleBarController.pendingDragContext,
+               dragRestorePerformer.beginDragHold(on: context) {
+                titleBarController.holdPendingDrag()
+            }
             return Unmanaged.passUnretained(event)
         case .consume:
             return nil
@@ -287,12 +315,29 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// When the event happened, not when it is handled: events that waited behind a slow
+    /// question come in a burst, and timed on arrival a slow drag read as a fast one.
+    static func seconds(of event: CGEvent) -> TimeInterval {
+        TimeInterval(event.timestamp) / 1_000_000_000
+    }
+
     private func processMouseDragged(_ event: CGEvent) -> Unmanaged<CGEvent>? {
         guard !bufferedEvents.isEmpty else {
-            switch titleBarController.handleMouseDragged(location: event.location) {
+            if let dragFollower {
+                dragFollower.pointerMoved(to: event.location)
+                return Unmanaged.passUnretained(event)
+            }
+            let decision = titleBarController.handleMouseDragged(location: event.location, time: Self.seconds(of: event))
+            switch decision {
             case .dragRestore(let context, let cursorLocation):
                 let result = dragRestorePerformer.performDragRestore(on: context, cursorLocation: cursorLocation)
                 if result.restored {
+                    // Only a restore with no animation leaves the window to its app's drag.
+                    if let pointerOffset = result.pointerOffset {
+                        let dragFollower = DragFollower(context: context, pointerOffset: pointerOffset)
+                        self.dragFollower = dragFollower
+                        dragFollower.pointerMoved(to: event.location)
+                    }
                     clearManagedWindowTracking(
                         for: context.interceptionKey,
                         reason: "Cleared managed-window tracking for \(context.windowIdentifier) after drag-restore."
@@ -326,6 +371,11 @@ final class EventTapService: ObservableObject, @unchecked Sendable {
     }
 
     private func processMouseUp(_ event: CGEvent) -> Unmanaged<CGEvent>? {
+        if let dragFollower {
+            dragFollower.finish(at: event.location)
+            self.dragFollower = nil
+        }
+        dragRestorePerformer.endDragHold()
         guard !bufferedEvents.isEmpty else {
             switch titleBarController.handleMouseUp() {
             case .consume:
@@ -599,7 +649,14 @@ protocol WindowActionPerforming {
 }
 
 protocol DragRestorePerforming {
-    func performDragRestore(on context: ClickedWindowContext, cursorLocation: CGPoint) -> DragRestoreResult
+    func performDragRestore(
+        on context: ClickedWindowContext,
+        cursorLocation: CGPoint
+    ) -> DragRestoreResult
+    /// Keeps a maximized window where it is while a press on its title bar starts
+    /// to move. False when the window is not held.
+    func beginDragHold(on context: ClickedWindowContext) -> Bool
+    func endDragHold()
 }
 
 enum InterceptionSource: Hashable {

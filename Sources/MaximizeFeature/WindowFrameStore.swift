@@ -89,6 +89,19 @@ final class WindowFrameStore: @unchecked Sendable {
         return frames.filter { $0.value.lastManagedMaximizeFrame != nil }
     }
 
+    /// Whether a window of `pid` that this feature maximized is at `bounds`, from the
+    /// window server's list alone, with no question to the app.
+    /// It runs for a press near the top of a window, so it reads the store in place.
+    func hasMaximizedWindow(pid: pid_t, at bounds: CGRect) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return frames.contains { identifier, state in
+            guard let maximized = state.lastManagedMaximizeFrame,
+                  MaximizeStrategy.framesNearlyEqual(maximized, bounds) else { return false }
+            return Self.pid(in: identifier) == pid
+        }
+    }
+
     func managedWindowIdentifiers() -> Set<String> {
         Set(managedStatesSnapshot().keys)
     }

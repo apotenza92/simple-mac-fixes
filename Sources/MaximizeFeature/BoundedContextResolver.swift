@@ -7,6 +7,14 @@ import Foundation
 /// through at once rather than queueing behind it.
 final class BoundedContextResolver: GreenButtonContextResolving, TitleBarContextResolving, @unchecked Sendable {
     static let defaultDeadline: TimeInterval = 0.15
+    /// A click on a green button waits for the answer: one let through goes to the
+    /// system, which opens full screen (seen in GitHub Desktop just after it opened).
+    static let greenButtonDeadline: TimeInterval = 0.3
+    /// A press on a window this feature maximized: the window holds still for the
+    /// first points of a drag anyway. Mail's answer took 141 to 155 ms, and at 0.15 s
+    /// 3 of 4 drags were let through and moved the window at its maximized size.
+    static let maximizedWindowDeadline: TimeInterval = 0.4
+
 
     private final class Box<T>: @unchecked Sendable { var value: T? }
 
@@ -23,14 +31,21 @@ final class BoundedContextResolver: GreenButtonContextResolving, TitleBarContext
     }
 
     func resolveGreenButtonClick(at location: CGPoint) -> ClickedWindowContext? {
-        bounded { [base] in base.resolveGreenButtonClick(at: location) }
+        bounded(within: max(deadline, Self.greenButtonDeadline)) { [base] in base.resolveGreenButtonClick(at: location) }
     }
 
     func resolveTitleBarInteraction(at location: CGPoint, isDoubleClick: Bool) -> TitleBarInteractionContext? {
-        bounded { [base] in base.resolveTitleBarInteraction(at: location, isDoubleClick: isDoubleClick) }
+        resolveTitleBarInteraction(at: location, isDoubleClick: isDoubleClick, waitsLonger: false)
     }
 
-    private func bounded<T>(_ work: @escaping () -> T?) -> T? {
+    /// `waitsLonger` for a title-bar double-click and for a press on a window this
+    /// feature maximized.
+    func resolveTitleBarInteraction(at location: CGPoint, isDoubleClick: Bool, waitsLonger: Bool) -> TitleBarInteractionContext? {
+        let limit = waitsLonger ? max(deadline, Self.maximizedWindowDeadline) : deadline
+        return bounded(within: limit) { [base] in base.resolveTitleBarInteraction(at: location, isDoubleClick: isDoubleClick) }
+    }
+
+    private func bounded<T>(within limit: TimeInterval, _ work: @escaping () -> T?) -> T? {
         lock.lock()
         guard !busy else {
             lock.unlock()
@@ -49,7 +64,7 @@ final class BoundedContextResolver: GreenButtonContextResolving, TitleBarContext
             lock.unlock()
             done.signal()
         }
-        guard done.wait(timeout: .now() + deadline) == .success else { return nil }
+        guard done.wait(timeout: .now() + limit) == .success else { return nil }
         lock.lock()
         defer { lock.unlock() }
         return box.value

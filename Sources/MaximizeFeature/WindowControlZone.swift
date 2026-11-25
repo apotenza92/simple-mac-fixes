@@ -12,6 +12,7 @@ enum WindowControlZone {
         let bounds: CGRect
         let layer: Int
         let alpha: Double
+        var pid: pid_t = 0
     }
 
     enum Region: Equatable {
@@ -34,17 +35,20 @@ enum WindowControlZone {
     /// full-screen app's window is skipped with them, which is harmless: it has no
     /// title bar, and its green button is left alone anyway.
     static func region(at point: CGPoint, windows: [Window], displays: [CGRect]) -> Region? {
-        let screen = displays.first { $0.contains(point) }
-        guard let window = windows.first(where: {
-            $0.alpha > 0.01 && $0.bounds.contains(point) && !(screen.map($0.bounds.contains) ?? false)
-        }) else {
-            return nil
-        }
         // Menus, popovers (such as the green button's tile menu), the Dock and overlays.
-        guard window.layer == 0 else { return nil }
+        guard let window = window(at: point, windows: windows, displays: displays), window.layer == 0 else { return nil }
         let offset = CGPoint(x: point.x - window.bounds.minX, y: point.y - window.bounds.minY)
         guard offset.y <= topBandHeight else { return nil }
         return offset.x <= buttonsCorner.width && offset.y <= buttonsCorner.height ? .windowButtons : .titleBar
+    }
+
+    /// The front window at `point` that can take a click, skipping see-through ones and
+    /// ones covering a whole screen.
+    static func window(at point: CGPoint, windows: [Window], displays: [CGRect]) -> Window? {
+        let screen = displays.first { $0.contains(point) }
+        return windows.first {
+            $0.alpha > 0.01 && $0.bounds.contains(point) && !(screen.map($0.bounds.contains) ?? false)
+        }
     }
 
     static func mayContainWindowControls(at point: CGPoint, windows: [Window], displays: [CGRect] = []) -> Bool {
@@ -67,7 +71,8 @@ enum WindowControlZone {
                   let bounds = CGRect(dictionaryRepresentation: boundsInfo) else { return nil }
             return Window(bounds: bounds,
                           layer: info[kCGWindowLayer as String] as? Int ?? 0,
-                          alpha: info[kCGWindowAlpha as String] as? Double ?? 1)
+                          alpha: info[kCGWindowAlpha as String] as? Double ?? 1,
+                          pid: info[kCGWindowOwnerPID as String] as? pid_t ?? 0)
         }
     }
 }

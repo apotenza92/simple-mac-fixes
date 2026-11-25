@@ -67,7 +67,42 @@ final class BoundedContextResolverTests: XCTestCase {
     }
 }
 
+extension BoundedContextResolverTests {
+    func testAPressOnAMaximizedWindowWaitsLongerForASlowApp() {
+        // Mail answered in 141 to 155 ms: past the usual limit, inside the longer one.
+        let resolver = BoundedContextResolver(base: SlowResolver(delay: 0.25))
+        var start = Date()
+        _ = resolver.resolveTitleBarInteraction(at: .zero, isDoubleClick: false)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.22)
+        Thread.sleep(forTimeInterval: 0.2)
+
+        start = Date()
+        _ = resolver.resolveTitleBarInteraction(at: .zero, isDoubleClick: false, waitsLonger: true)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.24)
+    }
+
+    func testAGreenButtonClickWaitsLongerForASlowApp() {
+        let resolver = BoundedContextResolver(base: SlowResolver(delay: 0.25))
+        let start = Date()
+        _ = resolver.resolveGreenButtonClick(at: .zero)
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(start), 0.24)
+    }
+}
+
 final class WindowFrameStoreSavingTests: XCTestCase {
+    func testFindsAMaximizedWindowFromTheWindowServersListAlone() {
+        let store = WindowFrameStore()
+        let maximized = CGRect(x: 0, y: 33, width: 1512, height: 949)
+        store.storeTransition(originalFrame: CGRect(x: 22, y: 75, width: 1136, height: 746),
+                              maximizedFrame: maximized, for: "pid:17177-cgwindow:17369")
+        store.store(frame: CGRect(x: 0, y: 33, width: 1512, height: 949), for: "pid:300-cgwindow:1")
+        XCTAssertTrue(store.hasMaximizedWindow(pid: 17177, at: maximized.offsetBy(dx: 1, dy: 0)))
+        // Moved away, another app, or only a size kept with no maximize.
+        XCTAssertFalse(store.hasMaximizedWindow(pid: 17177, at: maximized.offsetBy(dx: 40, dy: 80)))
+        XCTAssertFalse(store.hasMaximizedWindow(pid: 9533, at: maximized))
+        XCTAssertFalse(store.hasMaximizedWindow(pid: 300, at: maximized))
+    }
+
     func testMaximizedWindowsAreRememberedAcrossRestarts() throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "WindowFrameStoreTests"))
         defaults.removePersistentDomain(forName: "WindowFrameStoreTests")

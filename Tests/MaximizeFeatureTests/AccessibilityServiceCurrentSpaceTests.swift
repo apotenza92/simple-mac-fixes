@@ -431,6 +431,25 @@ final class AccessibilityServiceCurrentSpaceTests: XCTestCase {
         )
     }
 
+    func testWindowWithAPageBelowItsViewsHasAWebArea() {
+        let page = FakeNode(role: "AXWebArea", frame: nil, children: [])
+        var node = page
+        for _ in 0..<7 {
+            node = FakeNode(role: kAXGroupRole as String, frame: nil, children: [node])
+        }
+        let buttons = FakeNode(role: kAXButtonRole as String, frame: nil, children: [])
+        let window = FakeNode(role: kAXWindowRole as String, frame: nil, children: [node, buttons])
+
+        XCTAssertTrue(AccessibilityService.containsWebArea(root: window, children: \.children, role: \.role))
+    }
+
+    func testWindowWithOnlyItsViewsHasNoWebArea() {
+        let view = FakeNode(role: kAXGroupRole as String, frame: nil, children: [])
+        let window = FakeNode(role: kAXWindowRole as String, frame: nil, children: [view])
+
+        XCTAssertFalse(AccessibilityService.containsWebArea(root: window, children: \.children, role: \.role))
+    }
+
     func testNonElectronAppsAreNotTreatedAsUnreadablePages() {
         XCTAssertFalse(
             AccessibilityService.isElectronPageUnreadable(manualAccessibility: nil, enhancedUserInterface: false)
