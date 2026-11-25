@@ -3,18 +3,19 @@
   <channel>
     <title>Simple Mac Fixes</title>
     <item>
-      <title>v0.2.1</title>
-      <sparkle:version>200190000</sparkle:version>
-      <sparkle:shortVersionString>0.2.1</sparkle:shortVersionString>
+      <title>v0.2.2</title>
+      <sparkle:version>200290000</sparkle:version>
+      <sparkle:shortVersionString>0.2.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.4</sparkle:minimumSystemVersion>
-      <description sparkle:format="plain-text">- The pointer no longer stops or jumps when it is over a Dock app that shows window previews.
-- Clicking near the top of a Dock app now brings the app forward while its window previews show.
-- Minimizing a window from its preview keeps a clear picture of it, and the preview stays open.
-- Minimized windows and windows of a hidden app now say "Minimized" or "Hidden", and they no longer appear full size on the screen when you point at them.
-- The Dock no longer shows an app's name under its window previews while you scroll on the app to pick a window.
-- Mouse wheel scrolling no longer waits while the app is busy.
+      <description sparkle:format="plain-text">- Maximized windows now grow and shrink with the same smooth movement and speed as the system's own fill.
+- Dragging a maximized window by its title bar now works like the system's own: the window stays still for a moment, then comes away under the pointer at its earlier size and follows it.
+- New choice under "Maximize windows" in Settings: leave a gap between a maximized window and the edges of the screen (off, small, medium or large).
+- Double-clicking the title bar now maximizes windows in more apps, such as T3 Code and GitHub Desktop, instead of filling the screen the system's way.
+- Clicking the green button no longer sometimes opens full screen when another app is slow to answer.
+- Dragging a maximized Mail window now restores it, instead of moving it at its maximized size.
+- The Windows tab in Settings now fits its content, so there is nothing to scroll.
 </description>
-      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.2.1/Simple-Mac-Fixes-v0.2.1-macos-arm64.zip" length="3744084" type="application/octet-stream" sparkle:edSignature="fGRlyNeFK868YeJybkyMj9ugEiRiGwHB1ntrL9834EE2KOB9pMwpwaToW2RQ4hHI6bLihSy9vXpdSa7W2a2hAw==" />
+      <enclosure url="https://github.com/apotenza92/simple-mac-fixes/releases/download/v0.2.2/Simple-Mac-Fixes-v0.2.2-macos-arm64.zip" length="3775341" type="application/octet-stream" sparkle:edSignature="17yTFgyiKPGDo4rrMKKoCo75AmbYAvGJWR7vfImCS57ML3Gjn/RCb2VGuQJHB0pgeQjuvtYLhG1PnOZi+liaBA==" />
     </item>
   </channel>
 </rss>
